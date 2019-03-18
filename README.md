@@ -31,6 +31,7 @@ Internally no PIL or Pillow library is used anymore but the opencv module for do
 
 Sample script:
 
+    from __future__ import print_function
     import PILasOPENCV as Image
     # was: from PIL import Image
     
