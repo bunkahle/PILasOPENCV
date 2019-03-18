@@ -360,14 +360,14 @@ class Image(object):
         self.filename = filename
         self.format = format
         self._mode = None
-        if self.filename is not None:
-            ext = os.path.splitext(self.filename)[1]
-            self.format = EXTENSION[ext]
-        if self._instance is not None:
-            channels = self._instance.shape[2]
-            self.size = (self._instance.shape[1], self._instance.shape[0])
-            self.dtype = self._instance.dtype
-            self._mode = self._get_mode(channels, self.dtype)
+        if image is not None or filename is not None:
+            if self.filename is not None:
+                ext = os.path.splitext(self.filename)[1]
+                self.format = EXTENSION[ext]
+            if self._instance is not None:
+                self.size = (self._instance.shape[1], self._instance.shape[0])
+                self.dtype = self._instance.dtype
+                self._mode = self._get_mode(self._instance.shape, self.dtype)
         else:
             self._mode = None
             self.size = (0, 0)
@@ -446,12 +446,12 @@ class Image(object):
                 'LAB':cv2.COLOR_BGR2LAB,
                 'HSV':cv2.COLOR_BGR2HSV,
                 'YCBCR':cv2.COLOR_BGR2YCR_CB,
-                'RGBA':COLOR_BGR2BGRA
+                'RGBA':cv2.COLOR_BGR2BGRA
             },
             'RGBA':{
                 '1':cv2.COLOR_BGRA2GRAY,
                 'L':cv2.COLOR_BGRA2GRAY,
-                'RGB':COLOR_BGRA2BGR
+                'RGB':cv2.COLOR_BGRA2BGR
             },
             'LAB':{
                 'RGB':cv2.COLOR_LAB2BGR
@@ -471,7 +471,11 @@ class Image(object):
         else:
             raise ValueError('This image type can not be converted')
 
-    def _get_mode(self, channels, depth):
+    def _get_mode(self, shape, depth):
+        if len(shape) == 2:
+            channels = 1
+        else:
+            channels = shape[2]
         if channels == 1 and depth == np.bool:
             return '1'
         if channels == 1 and depth == np.uint8:
@@ -533,7 +537,7 @@ class Image(object):
             raise ValueError("Destination must be non-negative")
 
         channels, depth = self._get_channels_and_depth(im)
-        _mode = self._get_mode(im.shape[2], im.dtype)
+        _mode = self._get_mode(im.shape, im.dtype)
         _im = self._new(_mode, (im.shape[1], im.shape[0]))
         if len(source) == 2:
             source = source + _im.size
@@ -629,17 +633,15 @@ class Image(object):
     def convert(self, mode):
         "converts an image to the given mode"
         if self._mode.upper() == mode.upper():
-            return self._instance
+            return Image(self._instance.copy())
         if not mode and self.mode == "P":
             # determine default mode
             if self.palette:
                 mode = self.palette.mode
             else:
                 mode = "RGB"
-        if not mode or (mode == self.mode and not matrix):
-            return self._instance.copy()
-        if matrix:
-            raise ValueError('You can not convert image to this type: matrix, not supported')
+        if not mode or (mode == self.mode):
+            return Image(self._instance.copy())
         return Image(self._convert(mode))
         
     def _convert(self, mode, obj=None):
@@ -647,7 +649,7 @@ class Image(object):
             obj = self._instance
             flag = self._get_converting_flag(mode)
         else:
-            orig_mode = self._get_mode(obj.shape[2], obj.dtype)
+            orig_mode = self._get_mode(obj.shape, obj.dtype)
             flag = self._get_converting_flag(mode, inst=orig_mode)
         if mode == "1":
             im_gray = cv2.cvtColor(obj, cv2.COLOR_BGR2GRAY)
@@ -758,7 +760,8 @@ class Image(object):
         else:
             if channels == 4:
                 r ,g, b, a = self.split()
-                img = merge("RGB", r, g, b)
+                colorband = (r, g, b)
+                img = merge("RGB", colorband, image=True)
             else: # channels == 3
                 img = self._instance.copy()
             y = img.shape[0]
@@ -866,7 +869,8 @@ class Image(object):
                 a[:] = alpha
             else:
                 a = alpha.copy()
-            self._instance = merge("RGBA", r, g, b, a)
+            colorband = (r, g, b, a)
+            self._instance = merge("RGBA", colorband, image=True)
         elif channels == 3:
             if not paste_image:
                 sh = self._instance.shape
@@ -876,7 +880,8 @@ class Image(object):
             else:
                 a = alpha.copy()
             r, g, b = self.split()
-            self._instance = merge("RGBA", r, g, b, a)
+            colorband = (r, g, b, a)
+            self._instance = merge("RGBA", colorband, image=True)
         elif channels < 2: # "L" or "LA"
             if not paste_image:
                 sh = self._instance.shape
@@ -887,9 +892,10 @@ class Image(object):
                 a = alpha.copy()
             if channels == 2:
                 l, a_old = self.split()
-                self._instance = merge("LA", l, a)
+                colorband = (l, a)
             else:
-                self._instance = merge("LA", self._instance, a)
+                colorband = (self._instance, a)
+            self._instance = merge("LA", colorband, image=True)
 
     def putdata(self, data, scale=1.0, offset=0.0):
         """
@@ -923,8 +929,8 @@ class Image(object):
     def resize(self, size, filtermethod = cv2.INTER_LINEAR, image=None):
         "resizes an image according to the given filter/interpolation method NEAREST, BILINEAR/INTER_LINEAR, BICUBIC, LANCZOS, INTERAREA"
         if image is None:
-            self._instance = cv2.resize(self._instance, size, interpolation = filtermethod)
-            return Image(self._instance)
+            _im = cv2.resize(self._instance, size, interpolation = filtermethod)
+            return Image(_im)
         else:
             return cv2.resize(image, size, interpolation = filtermethod)
 
@@ -932,8 +938,8 @@ class Image(object):
         # grab the dimensions of the image and then determine the
         # center
         h, w = self._instance.shape[:2]
-        (cX, cY) = (w // 2, h // 2)
 
+        (cX, cY) = (w // 2, h // 2)
         # grab the rotation matrix (applying the negative of the
         # angle to rotate clockwise), then grab the sine and cosine
         # (i.e., the rotation components of the matrix)
@@ -985,7 +991,7 @@ class Image(object):
         :param fillcolor: An optional color for area outside the rotated image.
         :returns: An :py:class:`~PIL.Image.Image` object.
         """
-        angle = 360 - angle % 360.0
+        angle = angle % 360.0
         if fillcolor is None:
             fillcolor = (0, 0, 0)
         if expand == 0:
@@ -1092,10 +1098,10 @@ class Image(object):
                 return l, a
             elif self._instance.shape[2] == 3:
                 b, g, r = cv2.split(self._instance)
-                return r, g, b
+                return b, g, r
             else:
                 b, g, r, a = cv2.split(self._instance)
-                return r, g, b, a
+                return b, g, r, a
         else:
             if image.shape[2] == 1:
                 return image.copy()
@@ -1104,10 +1110,10 @@ class Image(object):
                 return l, a
             elif image.shape[2] == 3:
                 b, g, r = cv2.split(image)
-                return r, g, b
+                return b, g, r
             else:
                 b, g, r, a = cv2.split(image)
-                return r, g, b, a
+                return b, g, r, a
 
     def getchannel(self, channel):
         """
@@ -1259,14 +1265,14 @@ class Image(object):
         elif method == FLIP_TOP_BOTTOM:
             _im = cv2.flip(self._instance, 0)
         elif method == ROTATE_90:
-            _im = self.rotate_bound(self._instance, 270)
+            _im = self.rotate_bound(270)
             x = self.size[0]//2-self.size[1]//2
             box = (0, x, self.size[0], x+self.size[1])
             _im = self.crop(box, _im)
         elif method == ROTATE_180:
             _im = self.rotate(180, self._instance)
         elif method == ROTATE_270:
-            _im = self.rotate_bound(self._instance, 90)
+            _im = self.rotate_bound(90)
             x = self.size[0]//2-self.size[1]//2
             box = (0, x, self.size[0], x+self.size[1])
             _im = self.crop(box, _im)
@@ -1694,13 +1700,13 @@ def open(fl, mode='r'):
         basstring = basestring
     if isinstance(fl, basstring):
         _instance = cv2.imread(fl,cv2.IMREAD_UNCHANGED)
-        _mode = Image()._get_mode(_instance.shape[2], _instance.dtype)
+        # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
         img = Image(_instance, fl)
         return img
     if isinstance(fl, file):
         file_bytes = np.asarray(bytearray(fl.read()), dtype=np.uint8)
         _instance = cv2.imdecode(file_bytes, cv2.CV_LOAD_IMAGE_UNCHANGED)
-        _mode = Image()._get_mode(_instance.shape[2], _instance.dtype)
+        # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
         img = Image(_instance, fl.name)
         return img
     if hasattr(fl, 'mode'):
@@ -1715,7 +1721,7 @@ def open(fl, mode='r'):
 def blend(img1, img2, alpha):
     "blends 2 images using an alpha value>=0.0 and <=1.0"
     dst = cv2.addWeighted(img1, 1.0-alpha, img2, alpha, 0)
-    return dst
+    return Image(dst)
 
 def composite(background, foreground, mask):
     "pastes the foreground image into the background image using the mask"
@@ -1731,7 +1737,7 @@ def composite(background, foreground, mask):
     # Add the masked foreground and background
     outImage = cv2.add(foreground, background)
     outImage = outImage/255
-    return outImag
+    return Image(outImag)
 
 def alpha_composite(im1, im2):
     """
@@ -1750,8 +1756,17 @@ def alpha_composite(im1, im2):
     im4 = composite(alphacomp, im2, a2)
     return blend(im3, im4, 0.5)
 
-def merge(mode, red, green, blue=None, alpha=None):
+def merge(mode, colorbandtuple, image=False):
     "merges three channels to one band"
+    if len(colorbandtuple) == 2:
+        red, green = colorbandtuple
+        blue = None
+        alpha = None
+    elif len(colorbandtuple) == 3:
+        red, green, blue = colorbandtuple
+        alpha = None
+    elif len(colorbandtuple) == 4:
+        red, green, blue, alpha = colorbandtuple
     channels, depth = Image()._get_channels_and_depth(mode)
     img_dim = red.shape
     img = np.zeros((img_dim[0], img_dim[1], channels), dtype=depth)
@@ -1761,7 +1776,10 @@ def merge(mode, red, green, blue=None, alpha=None):
         img[:,:,2] = blue
     if alpha is not None:
         img[:,:,3] = alpha
-    return img
+    if image:
+        return img
+    else:
+        return Image(img)
 
 def linear_gradient(mode, size=256):
     "Generate 256x256 linear gradient from black to white, top to bottom."
