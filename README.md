@@ -56,6 +56,18 @@ Sample script:
     im.paste(region, box)
     im.show()
      
+# Export CV2/Numpy images
+You can export the cv2/numpy image from an Image instance with the command getim():
+    
+    from __future__ import print_function
+    import PILasOPENCV as Image
+    import cv2
+    im = Image.open("lena.jpg")
+    numpy_image = im.getim()
+    print(type(numpy_image), numpy_image.shape)
+    cv2.imshow("numpy_image", numpy_image)
+    cv2.waitKey(0)
+    
 # Attention:
 This is a very unstable development version. Use with care. Not much testing has been done to it.
 
