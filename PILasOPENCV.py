@@ -1293,23 +1293,39 @@ class Image(object):
         pass
 
 class ImageDraw(object):
-    _img_instance = None
-
     def __init__(self, img):
-        self._img_instance = img
+        self._img_instance = img._instance
 
     def point(self, xy, fill, width=3):
         for elem in xy:
             cv2.line(self._img_instance,elem, elem, fill,width)
 
-    def line(self, xy, color, width):
-        cv2.line(self._img_instance,xy[0], xy[1], color, width)
+    def line(self, xy, color=(0, 0, 0), width=1, fill=None):
+        print(xy)
+        cv2.line(self._img_instance, xy[:2], xy[2:4], color, width)
 
     def rectangle(self, xy, fill=None, outline=None):
         if fill:
             cv2.rectangle(self._img_instance,xy[0], xy[1], fill, thickness=cv2.cv.CV_FILLED)
         if outline:
             cv2.rectangle(self._img_instance,xy[0], xy[1], outline, 3)
+
+def Draw(im, mode=None):
+    """
+    A simple 2D drawing interface for PIL images.
+
+    :param im: The image to draw in.
+    :param mode: Optional mode to use for color values.  For RGB
+       images, this argument can be RGB or RGBA (to blend the
+       drawing into the image).  For all other modes, this argument
+       must be the same as the image mode.  If omitted, the mode
+       defaults to the mode of the image.
+    """
+    # try:
+    #     return im.getdraw(mode)
+    # except AttributeError:
+    #     return ImageDraw(im, mode)
+    return ImageDraw(im)
 
 class ImageColor(object):
 
