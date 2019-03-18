@@ -56,5 +56,14 @@ Sample script:
     im.paste(region, box)
     im.show()
      
-Attention:
+# Attention:
 This is a very unstable development version. Use with care. Not much testing has been done to it.
+
+# Dependencies:
+You need to have numpy and opencv installed to run the module.
+Install it with 
+
+     pip install numpy opencv-python
+     
+# Licence
+MIT
