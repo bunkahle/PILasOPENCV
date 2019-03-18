@@ -56,3 +56,5 @@ Sample script:
     im.paste(region, box)
     im.show()
      
+Attention:
+This is a very unstable development version. Use with care. Not much testing has been done to it.
