@@ -1035,7 +1035,11 @@ class Image(object):
         :exception IOError: If the file could not be written.  The file
            may have been created, and may contain partial data.
         """
-        if isinstance(fp, basestring):
+        if py3: 
+            basstring = str
+        else:
+            basstring = basestring
+        if isinstance(fp, basstring):
             cv2.imwrite(fp, self._instance)
             return None
         if isinstance(fp, file):
@@ -1810,15 +1814,18 @@ def radial_gradient(mode, size=256):
 
 
 if __name__ == '__main__':
+
+    # var init
     testfile = "lena.jpg"
     outfile1 = "lena1.bmp"
     outfile2 = "lena2.bmp"
     thsize = (128, 128)
     box = (100, 100, 400, 400)
 
-    from PIL import Image as PILImage
-    pil_image = PILImage.open(testfile)
-    print(pil_image.format, pil_image.size, pil_image.mode)
+    # the old style:
+    # from PIL import Image as PILImage
+    # pil_image = PILImage.open(testfile)
+    # print(pil_image.format, pil_image.size, pil_image.mode)
     # pil_image.save(outfile1)
     # pil_image.show()
     # small_pil = pil_image.copy()
@@ -1828,14 +1835,25 @@ if __name__ == '__main__':
     # region_pil = region_pil.transpose(PILImage.ROTATE_180)
     # pil_image.paste(region_pil, box)
     # pil_image.show()
+    
+    # the new style:
+
+    # if you import the library from site-packages import like this:
     # import PILasOPENCV as Image
-    # im = Image.open(testfile)
+    # im = Image.new("RGB", (512, 512), "white")
+
     im = new("RGB", (512, 512), "white")
     im.show()
-    im = open(testfile)
     print (type(im))
     print(im.format, im.size, im.mode)
-    # im.save(outfile2)
+    # None (512, 512) RGB
+    # <class 'Image'>
+
+    # im = Image.open(testfile)
+    im = open(testfile)
+    print(im.format, im.size, im.mode)
+    # JPEG (512, 512) RGB
+    im.save(outfile2)
     im.show()
     small = im.copy()
     small.thumbnail(thsize)
