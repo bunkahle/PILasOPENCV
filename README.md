@@ -60,11 +60,12 @@ Sample script:
 This is a very unstable development version. Use with care. Not much testing has been done to it.
 
 # TO DO:
-ImageFilter, ImageFont, ImageChops are not implemented yet.
-ImageDraw, ImageMode, ImageColor are implemented but have not been fully tested.
+ImageFilter, ImageFont, ImageChops, ImageDraw are not implemented yet.
+
+ImageMode, ImageColor are implemented but have not been fully tested.
 If you want to import them, import them with:
 
-    from PILasOPENCV import ImageDraw, ImageMode, ImageColor
+    from PILasOPENCV import ImageMode, ImageColor
 
 # Dependencies:
 You need to have numpy and opencv installed to run the module.
