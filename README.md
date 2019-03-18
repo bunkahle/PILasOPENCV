@@ -1,5 +1,5 @@
 # PILasOPENCV
-Wrapper for Image functions which are called like in the PIL module but work internally with OpenCV.
+Wrapper for Image functions which are used and called in the manner of the famous PIL module but work internally with OpenCV.
 
 This library can be used to migrate old PIL projects to OPENCV.
 
