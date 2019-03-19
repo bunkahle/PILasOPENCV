@@ -4,6 +4,7 @@ from __future__ import print_function
 import numpy as np
 import cv2
 import math, re, os, sys, tempfile
+import numbers
 
 __author__ = 'imressed, bunkus'
 # Constants (also defined in _imagingmodule.c!)
@@ -12,6 +13,10 @@ if sys.version[0] == "2":
     py3 = False
 else:
     py3 = True
+if py3: 
+    basstring = str
+else:
+    basstring = basestring
 NONE = 0
 MAX_IMAGE_PIXELS = int(1024 * 1024 * 1024 // 4 // 3)
 
@@ -1041,10 +1046,6 @@ class Image(object):
         :exception IOError: If the file could not be written.  The file
            may have been created, and may contain partial data.
         """
-        if py3: 
-            basstring = str
-        else:
-            basstring = basestring
         if isinstance(fp, basstring):
             cv2.imwrite(fp, self._instance)
             return None
@@ -1126,7 +1127,7 @@ class Image(object):
 
         .. versionadded:: 4.3.0
         """
-        if isStringType(channel):
+        if isinstance(channel, basstring):
             try:
                 channel = self.getbands().index(channel)
             except ValueError:
@@ -1293,22 +1294,111 @@ class Image(object):
         pass
 
 class ImageDraw(object):
-    def __init__(self, img):
+    def __init__(self, img, mode=None):
         self._img_instance = img._instance
+        self.mode = Image()._get_mode(self._img_instance.shape, self._img_instance.dtype)
+        self.fill = None
+        self.setink()
+        self.palette = None
+        self.font = None
 
-    def point(self, xy, fill, width=3):
-        for elem in xy:
-            cv2.line(self._img_instance,elem, elem, fill,width)
+    def _getink(self, ink, fill=None):
+        if ink is None and fill is None:
+            if self.fill:
+                fill = self.ink
+            else:
+                ink = self.ink
+        else:
+            if ink is not None:
+                if isinstance(ink, basstring):
+                    ink = ImageColor.getcolor(ink, self.mode)
+                if self.palette and not isinstance(ink, numbers.Number):
+                    ink = self.palette.getcolor(ink)
+                # ink = self.draw.draw_ink(ink, self.mode)
+            if fill is not None:
+                if isinstance(fill, basstring):
+                    fill = ImageColor.getcolor(fill, self.mode)
+                if self.palette and not isinstance(fill, numbers.Number):
+                    fill = self.palette.getcolor(fill)
+                # fill = self.draw.draw_ink(fill, self.mode)
+        return ink, fill
 
-    def line(self, xy, color=(0, 0, 0), width=1, fill=None):
-        print(xy)
-        cv2.line(self._img_instance, xy[:2], xy[2:4], color, width)
+    def get_coordinates(self, xy):
+        coord = []
+        if isinstance(xy[0], tuple):
+            for i in range(len(xy), 2):
+                coord.append(xy[i])
+                coord.append(xy[i+1])
+        else:
+            coord = xy
+        return coord
 
-    def rectangle(self, xy, fill=None, outline=None):
-        if fill:
-            cv2.rectangle(self._img_instance,xy[0], xy[1], fill, thickness=cv2.cv.CV_FILLED)
-        if outline:
-            cv2.rectangle(self._img_instance,xy[0], xy[1], outline, 3)
+    def get_ellipse_bb(x, y, major, minor, angle_deg=0):
+        "Compute tight ellipse bounding box."
+        t = np.arctan(-minor / 2 * np.tan(np.radians(angle_deg)) / (major / 2))
+        [max_x, min_x] = [x + major / 2 * np.cos(t) * np.cos(np.radians(angle_deg)) -
+                          minor / 2 * np.sin(t) * np.sin(np.radians(angle_deg)) for t in (t, t + np.pi)]
+        t = np.arctan(minor / 2 * 1. / np.tan(np.radians(angle_deg)) / (major / 2))
+        [max_y, min_y] = [y + minor / 2 * np.sin(t) * np.cos(np.radians(angle_deg)) +
+                          major / 2 * np.cos(t) * np.sin(np.radians(angle_deg)) for t in (t, t + np.pi)]
+        return min_x, min_y, max_x, max_y
+
+    def ellipse(self, box, fill=None, outline=None, width=0):
+        "Draw an ellipse inside the bounding box like cv2.ellipse(img, box, color[, thickness)]"
+        ink, fill = self._getink(outline, fill)
+        if fill is not None:
+            cv2.ellipse(self._img_instance, box, fill, -thickness)
+        if ink is not None and ink != fill:
+            cv2.ellipse(self._img_instance, box, ink, thickness)
+
+    def point(self, xy, fill=None, width=3):
+        "Draw a point."
+        ink, fill = self._getink(fill)
+        coord = self.get_coordinates(xy)
+        for co in range(len(coord), 2):
+            elem = (coord[co], coord[co+1])
+            cv2.line(self._img_instance, elem, elem, ink, width)
+
+    def line(self, xy, fill=None, width=1, joint=None):
+        "Draw a line."
+        ink = self._getink(fill)[0]
+        coord = self.get_coordinates(xy)
+        for co in range(len(coord), 4):
+            start = (coord[co], coord[co+1])
+            end = (coord[co+2], coord[co+3])
+            cv2.line(self._img_instance, start, end, ink, width)
+
+    def rectangle(self, xy, fill=None, outline=None, width=1):
+        "Draw a rectangle."
+        ink, fill = self._getink(outline, fill)
+        coord = self.get_coordinates(xy)
+        if fill is not None:
+            cv2.rectangle(self._img_instance, coord[:2], coord[2:4], fill, -width)
+        if ink is not None and ink != fill:
+            cv2.rectangle(self._img_instance, coord[:2], coord[2:4], ink, width)
+
+    def setink(self, color):
+        if len(self._img_instance.shape) == 2:
+            channels = 1
+        else:
+            channels = shape[2]
+        depth = self._img_instance.dtype
+        if channels == 1 and depth == np.bool:
+            self.ink = False
+        if channels == 1 and depth == np.uint8:
+            self.ink = 0
+        if channels == 2 and depth == np.uint8:
+            self.ink = (0, 255)
+        if channels == 3 and depth == np.uint8:
+            self.ink = (0, 0, 0)
+        if channels == 4 and depth == np.uint8:
+            self.ink = (0, 0, 0, 255)
+        if channels == 1 and depth == np.int32:
+            self.ink = 0
+        if channels == 1 and depth == np.float32:
+            self.ink = 0.0
+        if channels == 1 and depth == np.float64:
+            self.ink = 0.0
 
 def Draw(im, mode=None):
     """
@@ -1710,10 +1800,6 @@ _fromarray_typemap[((1, 1), _ENDIAN + "f4")] = ("F", "F")
 def open(fl, mode='r'):
     _mode = None
     _format = None
-    if py3: 
-        basstring = str
-    else:
-        basstring = basestring
     if isinstance(fl, basstring):
         _instance = cv2.imread(fl,cv2.IMREAD_UNCHANGED)
         # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
