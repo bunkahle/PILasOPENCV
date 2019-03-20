@@ -3,7 +3,7 @@
 from __future__ import print_function
 import numpy as np
 import cv2
-import math, re, os, sys, tempfile
+import re, os, sys, tempfile
 import numbers
 
 __author__ = 'imressed, bunkus'
@@ -17,6 +17,7 @@ if py3:
     basstring = str
 else:
     basstring = basestring
+
 NONE = 0
 MAX_IMAGE_PIXELS = int(1024 * 1024 * 1024 // 4 // 3)
 
@@ -1295,12 +1296,46 @@ class Image(object):
 
 class ImageDraw(object):
     def __init__(self, img, mode=None):
-        self._img_instance = img._instance
-        self.mode = Image()._get_mode(self._img_instance.shape, self._img_instance.dtype)
+        try:
+            self._img_instance = img._instance
+            self.mode = Image()._get_mode(self._img_instance.shape, self._img_instance.dtype)
+            self.setink()
+        except AttributeError:
+            self._img_instance = None
+            self.mode = None
+            self.ink = None
         self.fill = None
-        self.setink()
         self.palette = None
         self.font = None
+
+    def _convert_bgr2rgb(self, color):
+        if isinstance(color, tuple):
+            if len(color) == 3:
+                color = color[::-1]
+            elif len(color) == 4:
+                color = color[:3][::-1] + (color[3],)
+        return color
+
+    def _get_coordinates(self, xy):
+        "Transform two tuples in a 4 array or pass the 4 array through"
+        coord = []
+        if isinstance(xy[0], tuple):
+            for i in range(len(xy), 2):
+                coord.append(xy[i])
+                coord.append(xy[i+1])
+        else:
+            coord = xy
+        return coord
+
+    def _get_ellipse_bb(x, y, major, minor, angle_deg=0):
+        "Compute tight ellipse bounding box."
+        t = np.arctan(-minor / 2 * np.tan(np.radians(angle_deg)) / (major / 2))
+        [max_x, min_x] = [x + major / 2 * np.cos(t) * np.cos(np.radians(angle_deg)) -
+                          minor / 2 * np.sin(t) * np.sin(np.radians(angle_deg)) for t in (t, t + np.pi)]
+        t = np.arctan(minor / 2 * 1. / np.tan(np.radians(angle_deg)) / (major / 2))
+        [max_y, min_y] = [y + minor / 2 * np.sin(t) * np.cos(np.radians(angle_deg)) +
+                          major / 2 * np.cos(t) * np.sin(np.radians(angle_deg)) for t in (t, t + np.pi)]
+        return min_x, min_y, max_x, max_y
 
     def _getink(self, ink, fill=None):
         if ink is None and fill is None:
@@ -1311,77 +1346,190 @@ class ImageDraw(object):
         else:
             if ink is not None:
                 if isinstance(ink, basstring):
-                    ink = ImageColor.getcolor(ink, self.mode)
+                    ink = ImageColor().getcolor(ink, self.mode)
                 if self.palette and not isinstance(ink, numbers.Number):
                     ink = self.palette.getcolor(ink)
+                if not self.mode[0] in ("1", "L", "I", "F") and isinstance(ink, numbers.Number):
+                    ink = (0, 0, ink)
                 # ink = self.draw.draw_ink(ink, self.mode)
+                # convert BGR -> RGB
+                ink = self._convert_bgr2rgb(ink)
             if fill is not None:
                 if isinstance(fill, basstring):
-                    fill = ImageColor.getcolor(fill, self.mode)
+                    fill = ImageColor().getcolor(fill, self.mode)
                 if self.palette and not isinstance(fill, numbers.Number):
                     fill = self.palette.getcolor(fill)
+                if not self.mode[0] in ("1", "L", "I", "F") and isinstance(fill, numbers.Number):
+                    fill = (0, 0, fill)
                 # fill = self.draw.draw_ink(fill, self.mode)
+                # convert BGR -> RGB
+                fill = self._convert_bgr2rgb(fill)
         return ink, fill
 
-    def get_coordinates(self, xy):
-        coord = []
-        if isinstance(xy[0], tuple):
-            for i in range(len(xy), 2):
-                coord.append(xy[i])
-                coord.append(xy[i+1])
-        else:
-            coord = xy
-        return coord
+    def _get_ell_elements(self, box):
+        x1, y1, x2, y2 = box
+        axis1 = x2-x1
+        axis2 = y2-y1
+        center = (x1+axis1//2, y1+axis2//2)
+        return center, axis1, axis2
 
-    def get_ellipse_bb(x, y, major, minor, angle_deg=0):
-        "Compute tight ellipse bounding box."
-        t = np.arctan(-minor / 2 * np.tan(np.radians(angle_deg)) / (major / 2))
-        [max_x, min_x] = [x + major / 2 * np.cos(t) * np.cos(np.radians(angle_deg)) -
-                          minor / 2 * np.sin(t) * np.sin(np.radians(angle_deg)) for t in (t, t + np.pi)]
-        t = np.arctan(minor / 2 * 1. / np.tan(np.radians(angle_deg)) / (major / 2))
-        [max_y, min_y] = [y + minor / 2 * np.sin(t) * np.cos(np.radians(angle_deg)) +
-                          major / 2 * np.cos(t) * np.sin(np.radians(angle_deg)) for t in (t, t + np.pi)]
-        return min_x, min_y, max_x, max_y
+    def _get_pointFromEllipseAngle(self, centerx, centery, radiush, radiusv, ang):
+        c = np.cos(ang)
+        s = np.sin(ang)
+        ta = s / c  # tan(a)
+        tt = ta * radiush / radiusv  # tan(t)
+        d = 1. / np.sqrt(1. + tt * tt)
+        x = int(round(centerx + np.copysign(radiush * d, c)))
+        y = int(round(centery + np.copysign(radiusv * tt * d, s)))
+        return x, y
+
+    def arc(self, box, start, end, fill=None, width=0, line=False, linecenter=False, fillcolor=None):
+        "Draw an arc."
+        ink, fill = self._getink(fill)
+        if ink is not None:
+            center, axis1, axis2 = self._get_ell_elements(box)
+            axes = (axis1//2, axis2//2)
+            if fillcolor is not None:
+                width = -1
+                ink = fillcolor
+            cv2.ellipse(self._img_instance, center, axes, 0, start, end, ink, width)
+            if line:
+                startx, starty = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, start)
+                endx, endy = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, end)
+                st = (startx, starty)
+                e = (endx, endy)
+                cv2.line(self._img_instance, st, e, ink, abs(width))
+                if fillcolor is not None:
+                    pass
+
+    def chord(self, box, start, end, fill=None, outline=None, width=0):
+        "Draw a chord."
+        ink, fill = self._getink(outline, fill)
+        if fill is not None:
+            self.arc(box, start, end, ink, width, line=True, fillcolor=fill)
+            # self.draw.draw_chord(xy, start, end, fill, 1)
+        if ink is not None and ink != fill:
+            self.arc(box, start, end, ink, width, line=True)
+            # self.draw.draw_chord(xy, start, end, ink, 0, width)
 
     def ellipse(self, box, fill=None, outline=None, width=0):
         "Draw an ellipse inside the bounding box like cv2.ellipse(img, box, color[, thickness)]"
+        ink, fill = self. _getink(outline, fill)
+        center, axis1, axis2 = self._get_ell_elements(box)
+        ebox = (center, (axis1, axis2), 0)
+        if fill is not None:
+            cv2.ellipse(self._img_instance, ebox, fill, -1)
+        if ink is not None and ink != fill:
+            cv2.ellipse(self._img_instance, ebox, ink, width)
+
+    def pieslice(self, box, start, end, fill=None, outline=None, width=0):
+        "Draw a pieslice."
         ink, fill = self._getink(outline, fill)
         if fill is not None:
-            cv2.ellipse(self._img_instance, box, fill, -thickness)
+            self.arc(box, start, end, fill, width, fillcolor=fill)
+            # self.draw.draw_pieslice(xy, start, end, fill, 1)
         if ink is not None and ink != fill:
-            cv2.ellipse(self._img_instance, box, ink, thickness)
+            self.arc(box, start, end, ink, width, linecenter=True)
+            # self.draw.draw_pieslice(xy, start, end, ink, 0, width)
 
     def point(self, xy, fill=None, width=3):
         "Draw a point."
         ink, fill = self._getink(fill)
-        coord = self.get_coordinates(xy)
+        coord = self._get_coordinates(xy)
         for co in range(len(coord), 2):
             elem = (coord[co], coord[co+1])
             cv2.line(self._img_instance, elem, elem, ink, width)
 
+    def polygon(self, xy, fill=None, outline=None):
+        "Draw a polygon."
+        ink, fill = self._getink(outline, fill)
+        coord = self._get_coordinates(xy)
+        coord = np.reshape(coord, (len(coord)/2, 2))
+        if fill is not None:
+            # self.draw.draw_polygon(xy, fill, 1)
+            cv2.fillPoly(self._img_instance, coord, fill)
+        if ink is not None and ink != fill:
+            # self.draw.draw_polygon(xy, ink, 0)
+            cv2.polylines(self._img_instance, coord, True, ink)
+
     def line(self, xy, fill=None, width=1, joint=None):
         "Draw a line."
         ink = self._getink(fill)[0]
-        coord = self.get_coordinates(xy)
-        for co in range(len(coord), 4):
+        coord = self._get_coordinates(xy)
+        print(coord)
+        for co in range(0, len(coord), 4):
             start = (coord[co], coord[co+1])
             end = (coord[co+2], coord[co+3])
+            print(start, end, ink, width)
             cv2.line(self._img_instance, start, end, ink, width)
+        if joint == "curve" and width > 4:
+            for i in range(1, len(xy)-1):
+                point = xy[i]
+                angles = [
+                    np.degrees(np.arctan2(
+                        end[0] - start[0], start[1] - end[1]
+                    )) % 360
+                    for start, end in ((xy[i-1], point), (point, xy[i+1]))
+                ]
+                if angles[0] == angles[1]:
+                    # This is a straight line, so no joint is required
+                    continue
+
+                def coord_at_angle(coord, angle):
+                    x, y = coord
+                    angle -= 90
+                    distance = width/2 - 1
+                    return tuple([
+                        p +
+                        (np.floor(p_d) if p_d > 0 else np.ceil(p_d))
+                        for p, p_d in
+                        ((x, distance * np.cos(np.radians(angle))),
+                         (y, distance * np.sin(np.radians(angle))))
+                    ])
+                flipped = ((angles[1] > angles[0] and
+                            angles[1] - 180 > angles[0]) or
+                           (angles[1] < angles[0] and
+                            angles[1] + 180 > angles[0]))
+                coords = [
+                    (point[0] - width/2 + 1, point[1] - width/2 + 1),
+                    (point[0] + width/2 - 1, point[1] + width/2 - 1)
+                ]
+                if flipped:
+                    start, end = (angles[1] + 90, angles[0] + 90)
+                else:
+                    start, end = (angles[0] - 90, angles[1] - 90)
+                self.pieslice(coords, start - 90, end - 90, fill)
+                if width > 8:
+                    # Cover potential gaps between the line and the joint
+                    if flipped:
+                        gapCoords = [
+                            coord_at_angle(point, angles[0]+90),
+                            point,
+                            coord_at_angle(point, angles[1]+90)
+                        ]
+                    else:
+                        gapCoords = [
+                            coord_at_angle(point, angles[0]-90),
+                            point,
+                            coord_at_angle(point, angles[1]-90)
+                        ]
+                    self.line(gapCoords, fill, width=3)
 
     def rectangle(self, xy, fill=None, outline=None, width=1):
         "Draw a rectangle."
         ink, fill = self._getink(outline, fill)
-        coord = self.get_coordinates(xy)
+        coord = self._get_coordinates(xy)
         if fill is not None:
             cv2.rectangle(self._img_instance, coord[:2], coord[2:4], fill, -width)
         if ink is not None and ink != fill:
             cv2.rectangle(self._img_instance, coord[:2], coord[2:4], ink, width)
 
-    def setink(self, color):
+    def setink(self):
+        "Set ink to standard black by default"
         if len(self._img_instance.shape) == 2:
             channels = 1
         else:
-            channels = shape[2]
+            channels = self._img_instance.shape[2]
         depth = self._img_instance.dtype
         if channels == 1 and depth == np.bool:
             self.ink = False
@@ -1637,6 +1785,7 @@ def new(mode, size, color=0):
     if type(color).__name__ == "str":
         # css3-style specifier
         color = ImageColor().getcolor(color, mode)
+        color = ImageDraw(None)._convert_bgr2rgb(color)
 
     _im = Image()._new(mode, size, color)
     return Image(_im)
