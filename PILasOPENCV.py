@@ -2629,17 +2629,24 @@ def radial_gradient(mode, size=256):
 
 if __name__ == '__main__':
     # var init
-    testfile = "lena.jpg"
+    testfile = "lena1.jpg"
     if os.path.isfile("lena.jpg"):
         testfile = "lena.jpg"
     elif os.path.isfile("Images/lena.jpg"):
         testfile = "Images/lena.jpg"
     else:
-        import urllib2, cStringIO
-        imgdata = urllib2.urlopen("https://raw.githubusercontent.com/bunkahle/PILasOPENCV/master/tests/lena.jpg").read()
-        img = open(cStringIO.StringIO(imgdata))
-        temp = Image(img, format="RGB")
-        temp.save(testfile)
+        url_loc = "https://raw.githubusercontent.com/bunkahle/PILasOPENCV/master/tests/lena.jpg"
+        if py3:
+            import requests, builtins
+            f = builtins.open(testfile, "wb")
+            r = requests.get(url_loc)
+            f.write(r.content)
+        else:
+            import urllib2, cStringIO
+            imgdata = urllib2.urlopen(url_loc).read()
+            img = open(cStringIO.StringIO(imgdata))
+            temp = Image(img, format="RGB")
+            temp.save(testfile)
     outfile1 = "lena1.bmp"
     outfile2 = "lena2.bmp"
     thsize = (128, 128)
