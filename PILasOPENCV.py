@@ -510,6 +510,7 @@ class Image(object):
     def _new(self, mode, size, color=None):
         self._mode = mode
         channels, depth = self._get_channels_and_depth(mode)
+        size = size[::-1]
         self._instance = np.zeros(size + (channels,), depth)
         if color is not None:
             self._instance[:, 0:] = color
@@ -696,7 +697,13 @@ class Image(object):
                 r, g, b, _mask = self.split(mask)
             elif mask.shape[2] == 1:
                 _mask = mask.copy()
-            self._instance = self.composite(self._instance, new_canvas, _mask)
+            
+            if _mask.shape[:2] != new_canvas.shape[:2]:
+                _new_mask = np.zeros(self._instance.shape[:2], dtype=self._instance.dtype)
+                _new_mask = self._paste(_new_mask, _mask, box[0], box[1])
+            else:
+                _new_mask = _mask
+            self._instance = composite(self._instance, new_canvas, _new_mask)
 
     def _paste(self, mother, child, x, y):
         "Pastes the numpy image child into the numpy image mother at position (x, y)"
@@ -1294,6 +1301,415 @@ class Image(object):
         """
         pass
 
+"""
+class ImageFont(object):
+    "PIL font wrapper"
+    def _load_pilfont(self, filename):
+        with open(filename, "rb") as fp:
+            for ext in (".png", ".gif", ".pbm"):
+                try:
+                    fullname = os.path.splitext(filename)[0] + ext
+                    image = Image.open(fullname)
+                except Exception:
+                    pass
+                else:
+                    if image and image.mode in ("1", "L"):
+                        break
+            else:
+                raise IOError("cannot find glyph data file")
+            self.file = fullname
+            return self._load_pilfont_data(fp, image)
+
+    def _load_pilfont_data(self, file, image):
+        # read PILfont header
+        if file.readline() != b"PILfont\n":
+            raise SyntaxError("Not a PILfont file")
+        file.readline().split(b";")
+        self.info = []  # FIXME: should be a dictionary
+        while True:
+            s = file.readline()
+            if not s or s == b"DATA\n":
+                break
+            self.info.append(s)
+        # read PILfont metrics
+        data = file.read(256*20)
+        # check image
+        if image.mode not in ("1", "L"):
+            raise TypeError("invalid font image mode")
+        image.load()
+        self.font = Image.core.font(image.im, data)
+
+    def getsize(self, text, *args, **kwargs):
+        return self.font.getsize(text)
+
+    def getmask(self, text, mode="", *args, **kwargs):
+        return self.font.getmask(text, mode)
+
+
+##
+# Wrapper for FreeType fonts.  Application code should use the
+# <b>truetype</b> factory function to create font objects.
+
+class FreeTypeFont(object):
+    "FreeType font wrapper (requires _imagingft service)"
+
+    def __init__(self, font=None, size=10, index=0, encoding="",
+                 layout_engine=None):
+        # FIXME: use service provider instead
+
+        self.path = font
+        self.size = size
+        self.index = index
+        self.encoding = encoding
+
+        if layout_engine not in (LAYOUT_BASIC, LAYOUT_RAQM):
+            layout_engine = LAYOUT_BASIC
+            if core.HAVE_RAQM:
+                layout_engine = LAYOUT_RAQM
+        if layout_engine == LAYOUT_RAQM and not core.HAVE_RAQM:
+            layout_engine = LAYOUT_BASIC
+
+        self.layout_engine = layout_engine
+
+        if isPath(font):
+            self.font = core.getfont(font, size, index, encoding,
+                                     layout_engine=layout_engine)
+        else:
+            self.font_bytes = font.read()
+            self.font = core.getfont(
+                "", size, index, encoding, self.font_bytes, layout_engine)
+
+    def _multiline_split(self, text):
+        split_character = "\n" if isinstance(text, str) else b"\n"
+        return text.split(split_character)
+
+    def getname(self):
+        return self.font.family, self.font.style
+
+    def getmetrics(self):
+        return self.font.ascent, self.font.descent
+
+    def getsize(self, text, direction=None, features=None):
+        size, offset = self.font.getsize(text, direction, features)
+        return (size[0] + offset[0], size[1] + offset[1])
+
+    def getsize_multiline(self, text, direction=None,
+                          spacing=4, features=None):
+        max_width = 0
+        lines = self._multiline_split(text)
+        line_spacing = self.getsize('A')[1] + spacing
+        for line in lines:
+            line_width, line_height = self.getsize(line, direction, features)
+            max_width = max(max_width, line_width)
+
+        return max_width, len(lines)*line_spacing - spacing
+
+    def getoffset(self, text):
+        return self.font.getsize(text)[1]
+
+    def getmask(self, text, mode="", direction=None, features=None):
+        return self.getmask2(text, mode, direction=direction,
+                             features=features)[0]
+
+    def getmask2(self, text, mode="", fill=Image.core.fill, direction=None,
+                 features=None, *args, **kwargs):
+        size, offset = self.font.getsize(text, direction, features)
+        im = fill("L", size, 0)
+        self.font.render(text, im.id, mode == "1", direction, features)
+        return im, offset
+
+    def font_variant(self, font=None, size=None, index=None, encoding=None,
+                     layout_engine=None):
+        '''
+        Create a copy of this FreeTypeFont object,
+        using any specified arguments to override the settings.
+
+        Parameters are identical to the parameters used to initialize this
+        object.
+
+        :return: A FreeTypeFont object.
+        '''
+        return FreeTypeFont(
+            font=self.path if font is None else font,
+            size=self.size if size is None else size,
+            index=self.index if index is None else index,
+            encoding=self.encoding if encoding is None else encoding,
+            layout_engine=layout_engine or self.layout_engine
+        )
+"""
+
+class TransposedFont(object):
+    "Wrapper for writing rotated or mirrored text"
+
+    def __init__(self, font, orientation=None):
+        """
+        Wrapper that creates a transposed font from any existing font
+        object.
+
+        :param font: A font object.
+        :param orientation: An optional orientation.  If given, this should
+            be one of Image.FLIP_LEFT_RIGHT, Image.FLIP_TOP_BOTTOM,
+            Image.ROTATE_90, Image.ROTATE_180, or Image.ROTATE_270.
+        """
+        self.font = font
+        self.orientation = orientation  # any 'transpose' argument, or None
+
+    def getsize(self, text, *args, **kwargs):
+        w, h = self.font.getsize(text)
+        if self.orientation in (Image.ROTATE_90, Image.ROTATE_270):
+            return h, w
+        return w, h
+
+    def getmask(self, text, mode="", *args, **kwargs):
+        im = self.font.getmask(text, mode, *args, **kwargs)
+        if self.orientation is not None:
+            return im.transpose(self.orientation)
+        return im
+
+
+def load(filename):
+    """
+    Load a font file.  This function loads a font object from the given
+    bitmap font file, and returns the corresponding font object.
+
+    :param filename: Name of font file.
+    :return: A font object.
+    :exception IOError: If the file could not be read.
+    """
+    f = ImageFont()
+    f._load_pilfont(filename)
+    return f
+
+'''
+def truetype(font=None, size=10, index=0, encoding="",
+             layout_engine=None):
+    """
+    Load a TrueType or OpenType font from a file or file-like object,
+    and create a font object.
+    This function loads a font object from the given file or file-like
+    object, and creates a font object for a font of the given size.
+
+    This function requires the _imagingft service.
+
+    :param font: A filename or file-like object containing a TrueType font.
+                     Under Windows, if the file is not found in this filename,
+                     the loader also looks in Windows :file:`fonts/` directory.
+    :param size: The requested size, in points.
+    :param index: Which font face to load (default is first available face).
+    :param encoding: Which font encoding to use (default is Unicode). Common
+                     encodings are "unic" (Unicode), "symb" (Microsoft
+                     Symbol), "ADOB" (Adobe Standard), "ADBE" (Adobe Expert),
+                     and "armn" (Apple Roman). See the FreeType documentation
+                     for more information.
+    :param layout_engine: Which layout engine to use, if available:
+                     `ImageFont.LAYOUT_BASIC` or `ImageFont.LAYOUT_RAQM`.
+    :return: A font object.
+    :exception IOError: If the file could not be read.
+    """
+
+    try:
+        return FreeTypeFont(font, size, index, encoding, layout_engine)
+    except IOError:
+        ttf_filename = os.path.basename(font)
+
+        dirs = []
+        if sys.platform == "win32":
+            # check the windows font repository
+            # NOTE: must use uppercase WINDIR, to work around bugs in
+            # 1.5.2's os.environ.get()
+            windir = os.environ.get("WINDIR")
+            if windir:
+                dirs.append(os.path.join(windir, "fonts"))
+        elif sys.platform in ('linux', 'linux2'):
+            lindirs = os.environ.get("XDG_DATA_DIRS", "")
+            if not lindirs:
+                # According to the freedesktop spec, XDG_DATA_DIRS should
+                # default to /usr/share
+                lindirs = '/usr/share'
+            dirs += [os.path.join(lindir, "fonts")
+                     for lindir in lindirs.split(":")]
+        elif sys.platform == 'darwin':
+            dirs += ['/Library/Fonts', '/System/Library/Fonts',
+                     os.path.expanduser('~/Library/Fonts')]
+
+        ext = os.path.splitext(ttf_filename)[1]
+        first_font_with_a_different_extension = None
+        for directory in dirs:
+            for walkroot, walkdir, walkfilenames in os.walk(directory):
+                for walkfilename in walkfilenames:
+                    if ext and walkfilename == ttf_filename:
+                        fontpath = os.path.join(walkroot, walkfilename)
+                        return FreeTypeFont(fontpath, size, index,
+                                            encoding, layout_engine)
+                    elif (not ext and
+                          os.path.splitext(walkfilename)[0] == ttf_filename):
+                        fontpath = os.path.join(walkroot, walkfilename)
+                        if os.path.splitext(fontpath)[1] == '.ttf':
+                            return FreeTypeFont(fontpath, size, index,
+                                                encoding, layout_engine)
+                        if not ext \
+                           and first_font_with_a_different_extension is None:
+                            first_font_with_a_different_extension = fontpath
+        if first_font_with_a_different_extension:
+            return FreeTypeFont(first_font_with_a_different_extension, size,
+                                index, encoding, layout_engine)
+        raise
+'''
+
+def load_path(filename):
+    """
+    Load font file. Same as :py:func:`~PIL.ImageFont.load`, but searches for a
+    bitmap font along the Python path.
+
+    :param filename: Name of font file.
+    :return: A font object.
+    :exception IOError: If the file could not be read.
+    """
+    for directory in sys.path:
+        if isDirectory(directory):
+            if not isinstance(filename, str):
+                if py3:
+                    filename = filename.decode("utf-8")
+                else:
+                    filename = filename.encode("utf-8")
+            try:
+                return load(os.path.join(directory, filename))
+            except IOError:
+                pass
+    raise IOError("cannot find font file")
+
+def load_default():
+    """Load a "better than nothing" default font.
+
+    .. versionadded:: 1.1.4
+
+    :return: A font object.
+    """
+    from io import BytesIO
+    import base64
+    f = ImageFont()
+    f._load_pilfont_data(
+        # courB08
+        BytesIO(base64.b64decode(b'''
+UElMZm9udAo7Ozs7OzsxMDsKREFUQQoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAA//8AAQAAAAAAAAABAAEA
+BgAAAAH/+gADAAAAAQAAAAMABgAGAAAAAf/6AAT//QADAAAABgADAAYAAAAA//kABQABAAYAAAAL
+AAgABgAAAAD/+AAFAAEACwAAABAACQAGAAAAAP/5AAUAAAAQAAAAFQAHAAYAAP////oABQAAABUA
+AAAbAAYABgAAAAH/+QAE//wAGwAAAB4AAwAGAAAAAf/5AAQAAQAeAAAAIQAIAAYAAAAB//kABAAB
+ACEAAAAkAAgABgAAAAD/+QAE//0AJAAAACgABAAGAAAAAP/6AAX//wAoAAAALQAFAAYAAAAB//8A
+BAACAC0AAAAwAAMABgAAAAD//AAF//0AMAAAADUAAQAGAAAAAf//AAMAAAA1AAAANwABAAYAAAAB
+//kABQABADcAAAA7AAgABgAAAAD/+QAFAAAAOwAAAEAABwAGAAAAAP/5AAYAAABAAAAARgAHAAYA
+AAAA//kABQAAAEYAAABLAAcABgAAAAD/+QAFAAAASwAAAFAABwAGAAAAAP/5AAYAAABQAAAAVgAH
+AAYAAAAA//kABQAAAFYAAABbAAcABgAAAAD/+QAFAAAAWwAAAGAABwAGAAAAAP/5AAUAAABgAAAA
+ZQAHAAYAAAAA//kABQAAAGUAAABqAAcABgAAAAD/+QAFAAAAagAAAG8ABwAGAAAAAf/8AAMAAABv
+AAAAcQAEAAYAAAAA//wAAwACAHEAAAB0AAYABgAAAAD/+gAE//8AdAAAAHgABQAGAAAAAP/7AAT/
+/gB4AAAAfAADAAYAAAAB//oABf//AHwAAACAAAUABgAAAAD/+gAFAAAAgAAAAIUABgAGAAAAAP/5
+AAYAAQCFAAAAiwAIAAYAAP////oABgAAAIsAAACSAAYABgAA////+gAFAAAAkgAAAJgABgAGAAAA
+AP/6AAUAAACYAAAAnQAGAAYAAP////oABQAAAJ0AAACjAAYABgAA////+gAFAAAAowAAAKkABgAG
+AAD////6AAUAAACpAAAArwAGAAYAAAAA//oABQAAAK8AAAC0AAYABgAA////+gAGAAAAtAAAALsA
+BgAGAAAAAP/6AAQAAAC7AAAAvwAGAAYAAP////oABQAAAL8AAADFAAYABgAA////+gAGAAAAxQAA
+AMwABgAGAAD////6AAUAAADMAAAA0gAGAAYAAP////oABQAAANIAAADYAAYABgAA////+gAGAAAA
+2AAAAN8ABgAGAAAAAP/6AAUAAADfAAAA5AAGAAYAAP////oABQAAAOQAAADqAAYABgAAAAD/+gAF
+AAEA6gAAAO8ABwAGAAD////6AAYAAADvAAAA9gAGAAYAAAAA//oABQAAAPYAAAD7AAYABgAA////
++gAFAAAA+wAAAQEABgAGAAD////6AAYAAAEBAAABCAAGAAYAAP////oABgAAAQgAAAEPAAYABgAA
+////+gAGAAABDwAAARYABgAGAAAAAP/6AAYAAAEWAAABHAAGAAYAAP////oABgAAARwAAAEjAAYA
+BgAAAAD/+gAFAAABIwAAASgABgAGAAAAAf/5AAQAAQEoAAABKwAIAAYAAAAA//kABAABASsAAAEv
+AAgABgAAAAH/+QAEAAEBLwAAATIACAAGAAAAAP/5AAX//AEyAAABNwADAAYAAAAAAAEABgACATcA
+AAE9AAEABgAAAAH/+QAE//wBPQAAAUAAAwAGAAAAAP/7AAYAAAFAAAABRgAFAAYAAP////kABQAA
+AUYAAAFMAAcABgAAAAD/+wAFAAABTAAAAVEABQAGAAAAAP/5AAYAAAFRAAABVwAHAAYAAAAA//sA
+BQAAAVcAAAFcAAUABgAAAAD/+QAFAAABXAAAAWEABwAGAAAAAP/7AAYAAgFhAAABZwAHAAYAAP//
+//kABQAAAWcAAAFtAAcABgAAAAD/+QAGAAABbQAAAXMABwAGAAAAAP/5AAQAAgFzAAABdwAJAAYA
+AP////kABgAAAXcAAAF+AAcABgAAAAD/+QAGAAABfgAAAYQABwAGAAD////7AAUAAAGEAAABigAF
+AAYAAP////sABQAAAYoAAAGQAAUABgAAAAD/+wAFAAABkAAAAZUABQAGAAD////7AAUAAgGVAAAB
+mwAHAAYAAAAA//sABgACAZsAAAGhAAcABgAAAAD/+wAGAAABoQAAAacABQAGAAAAAP/7AAYAAAGn
+AAABrQAFAAYAAAAA//kABgAAAa0AAAGzAAcABgAA////+wAGAAABswAAAboABQAGAAD////7AAUA
+AAG6AAABwAAFAAYAAP////sABgAAAcAAAAHHAAUABgAAAAD/+wAGAAABxwAAAc0ABQAGAAD////7
+AAYAAgHNAAAB1AAHAAYAAAAA//sABQAAAdQAAAHZAAUABgAAAAH/+QAFAAEB2QAAAd0ACAAGAAAA
+Av/6AAMAAQHdAAAB3gAHAAYAAAAA//kABAABAd4AAAHiAAgABgAAAAD/+wAF//0B4gAAAecAAgAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAB
+//sAAwACAecAAAHpAAcABgAAAAD/+QAFAAEB6QAAAe4ACAAGAAAAAP/5AAYAAAHuAAAB9AAHAAYA
+AAAA//oABf//AfQAAAH5AAUABgAAAAD/+QAGAAAB+QAAAf8ABwAGAAAAAv/5AAMAAgH/AAACAAAJ
+AAYAAAAA//kABQABAgAAAAIFAAgABgAAAAH/+gAE//sCBQAAAggAAQAGAAAAAP/5AAYAAAIIAAAC
+DgAHAAYAAAAB//kABf/+Ag4AAAISAAUABgAA////+wAGAAACEgAAAhkABQAGAAAAAP/7AAX//gIZ
+AAACHgADAAYAAAAA//wABf/9Ah4AAAIjAAEABgAAAAD/+QAHAAACIwAAAioABwAGAAAAAP/6AAT/
++wIqAAACLgABAAYAAAAA//kABP/8Ai4AAAIyAAMABgAAAAD/+gAFAAACMgAAAjcABgAGAAAAAf/5
+AAT//QI3AAACOgAEAAYAAAAB//kABP/9AjoAAAI9AAQABgAAAAL/+QAE//sCPQAAAj8AAgAGAAD/
+///7AAYAAgI/AAACRgAHAAYAAAAA//kABgABAkYAAAJMAAgABgAAAAH//AAD//0CTAAAAk4AAQAG
+AAAAAf//AAQAAgJOAAACUQADAAYAAAAB//kABP/9AlEAAAJUAAQABgAAAAH/+QAF//4CVAAAAlgA
+BQAGAAD////7AAYAAAJYAAACXwAFAAYAAP////kABgAAAl8AAAJmAAcABgAA////+QAGAAACZgAA
+Am0ABwAGAAD////5AAYAAAJtAAACdAAHAAYAAAAA//sABQACAnQAAAJ5AAcABgAA////9wAGAAAC
+eQAAAoAACQAGAAD////3AAYAAAKAAAAChwAJAAYAAP////cABgAAAocAAAKOAAkABgAA////9wAG
+AAACjgAAApUACQAGAAD////4AAYAAAKVAAACnAAIAAYAAP////cABgAAApwAAAKjAAkABgAA////
++gAGAAACowAAAqoABgAGAAAAAP/6AAUAAgKqAAACrwAIAAYAAP////cABQAAAq8AAAK1AAkABgAA
+////9wAFAAACtQAAArsACQAGAAD////3AAUAAAK7AAACwQAJAAYAAP////gABQAAAsEAAALHAAgA
+BgAAAAD/9wAEAAACxwAAAssACQAGAAAAAP/3AAQAAALLAAACzwAJAAYAAAAA//cABAAAAs8AAALT
+AAkABgAAAAD/+AAEAAAC0wAAAtcACAAGAAD////6AAUAAALXAAAC3QAGAAYAAP////cABgAAAt0A
+AALkAAkABgAAAAD/9wAFAAAC5AAAAukACQAGAAAAAP/3AAUAAALpAAAC7gAJAAYAAAAA//cABQAA
+Au4AAALzAAkABgAAAAD/9wAFAAAC8wAAAvgACQAGAAAAAP/4AAUAAAL4AAAC/QAIAAYAAAAA//oA
+Bf//Av0AAAMCAAUABgAA////+gAGAAADAgAAAwkABgAGAAD////3AAYAAAMJAAADEAAJAAYAAP//
+//cABgAAAxAAAAMXAAkABgAA////9wAGAAADFwAAAx4ACQAGAAD////4AAYAAAAAAAoABwASAAYA
+AP////cABgAAAAcACgAOABMABgAA////+gAFAAAADgAKABQAEAAGAAD////6AAYAAAAUAAoAGwAQ
+AAYAAAAA//gABgAAABsACgAhABIABgAAAAD/+AAGAAAAIQAKACcAEgAGAAAAAP/4AAYAAAAnAAoA
+LQASAAYAAAAA//gABgAAAC0ACgAzABIABgAAAAD/+QAGAAAAMwAKADkAEQAGAAAAAP/3AAYAAAA5
+AAoAPwATAAYAAP////sABQAAAD8ACgBFAA8ABgAAAAD/+wAFAAIARQAKAEoAEQAGAAAAAP/4AAUA
+AABKAAoATwASAAYAAAAA//gABQAAAE8ACgBUABIABgAAAAD/+AAFAAAAVAAKAFkAEgAGAAAAAP/5
+AAUAAABZAAoAXgARAAYAAAAA//gABgAAAF4ACgBkABIABgAAAAD/+AAGAAAAZAAKAGoAEgAGAAAA
+AP/4AAYAAABqAAoAcAASAAYAAAAA//kABgAAAHAACgB2ABEABgAAAAD/+AAFAAAAdgAKAHsAEgAG
+AAD////4AAYAAAB7AAoAggASAAYAAAAA//gABQAAAIIACgCHABIABgAAAAD/+AAFAAAAhwAKAIwA
+EgAGAAAAAP/4AAUAAACMAAoAkQASAAYAAAAA//gABQAAAJEACgCWABIABgAAAAD/+QAFAAAAlgAK
+AJsAEQAGAAAAAP/6AAX//wCbAAoAoAAPAAYAAAAA//oABQABAKAACgClABEABgAA////+AAGAAAA
+pQAKAKwAEgAGAAD////4AAYAAACsAAoAswASAAYAAP////gABgAAALMACgC6ABIABgAA////+QAG
+AAAAugAKAMEAEQAGAAD////4AAYAAgDBAAoAyAAUAAYAAP////kABQACAMgACgDOABMABgAA////
++QAGAAIAzgAKANUAEw==
+''')), Image.open(BytesIO(base64.b64decode(b'''
+iVBORw0KGgoAAAANSUhEUgAAAx4AAAAUAQAAAAArMtZoAAAEwElEQVR4nABlAJr/AHVE4czCI/4u
+Mc4b7vuds/xzjz5/3/7u/n9vMe7vnfH/9++vPn/xyf5zhxzjt8GHw8+2d83u8x27199/nxuQ6Od9
+M43/5z2I+9n9ZtmDBwMQECDRQw/eQIQohJXxpBCNVE6QCCAAAAD//wBlAJr/AgALyj1t/wINwq0g
+LeNZUworuN1cjTPIzrTX6ofHWeo3v336qPzfEwRmBnHTtf95/fglZK5N0PDgfRTslpGBvz7LFc4F
+IUXBWQGjQ5MGCx34EDFPwXiY4YbYxavpnhHFrk14CDAAAAD//wBlAJr/AgKqRooH2gAgPeggvUAA
+Bu2WfgPoAwzRAABAAAAAAACQgLz/3Uv4Gv+gX7BJgDeeGP6AAAD1NMDzKHD7ANWr3loYbxsAD791
+NAADfcoIDyP44K/jv4Y63/Z+t98Ovt+ub4T48LAAAAD//wBlAJr/AuplMlADJAAAAGuAphWpqhMx
+in0A/fRvAYBABPgBwBUgABBQ/sYAyv9g0bCHgOLoGAAAAAAAREAAwI7nr0ArYpow7aX8//9LaP/9
+SjdavWA8ePHeBIKB//81/83ndznOaXx379wAAAD//wBlAJr/AqDxW+D3AABAAbUh/QMnbQag/gAY
+AYDAAACgtgD/gOqAAAB5IA/8AAAk+n9w0AAA8AAAmFRJuPo27ciC0cD5oeW4E7KA/wD3ECMAn2tt
+y8PgwH8AfAxFzC0JzeAMtratAsC/ffwAAAD//wBlAJr/BGKAyCAA4AAAAvgeYTAwHd1kmQF5chkG
+ABoMIHcL5xVpTfQbUqzlAAAErwAQBgAAEOClA5D9il08AEh/tUzdCBsXkbgACED+woQg8Si9VeqY
+lODCn7lmF6NhnAEYgAAA/NMIAAAAAAD//2JgjLZgVGBg5Pv/Tvpc8hwGBjYGJADjHDrAwPzAjv/H
+/Wf3PzCwtzcwHmBgYGcwbZz8wHaCAQMDOwMDQ8MCBgYOC3W7mp+f0w+wHOYxO3OG+e376hsMZjk3
+AAAAAP//YmCMY2A4wMAIN5e5gQETPD6AZisDAwMDgzSDAAPjByiHcQMDAwMDg1nOze1lByRu5/47
+c4859311AYNZzg0AAAAA//9iYGDBYihOIIMuwIjGL39/fwffA8b//xv/P2BPtzzHwCBjUQAAAAD/
+/yLFBrIBAAAA//9i1HhcwdhizX7u8NZNzyLbvT97bfrMf/QHI8evOwcSqGUJAAAA//9iYBB81iSw
+pEE170Qrg5MIYydHqwdDQRMrAwcVrQAAAAD//2J4x7j9AAMDn8Q/BgYLBoaiAwwMjPdvMDBYM1Tv
+oJodAAAAAP//Yqo/83+dxePWlxl3npsel9lvLfPcqlE9725C+acfVLMEAAAA//9i+s9gwCoaaGMR
+evta/58PTEWzr21hufPjA8N+qlnBwAAAAAD//2JiWLci5v1+HmFXDqcnULE/MxgYGBj+f6CaJQAA
+AAD//2Ji2FrkY3iYpYC5qDeGgeEMAwPDvwQBBoYvcTwOVLMEAAAA//9isDBgkP///0EOg9z35v//
+Gc/eeW7BwPj5+QGZhANUswMAAAD//2JgqGBgYGBgqEMXlvhMPUsAAAAA//8iYDd1AAAAAP//AwDR
+w7IkEbzhVQAAAABJRU5ErkJggg==
+'''))))
+    return f
+
+
 class ImageDraw(object):
     def __init__(self, img, mode=None):
         try:
@@ -1321,9 +1737,9 @@ class ImageDraw(object):
         "Transform two tuples in a 4 array or pass the 4 array through"
         coord = []
         if isinstance(xy[0], tuple):
-            for i in range(len(xy), 2):
-                coord.append(xy[i])
-                coord.append(xy[i+1])
+            for i in range(len(xy)):
+                coord.append(xy[i][0])
+                coord.append(xy[i][1])
         else:
             coord = xy
         return coord
@@ -1375,21 +1791,44 @@ class ImageDraw(object):
         return center, axis1, axis2
 
     def _get_pointFromEllipseAngle(self, centerx, centery, radiush, radiusv, ang):
+        """calculate point (x,y) for a given angle ang on an ellipse with its center at centerx, centery and 
+        its horizontal radiush and its vertical radiusv"""
         th = np.radians(ang)
         ratio = (radiush/2.0)/float(radiusv/2.0)
         x = centerx + radiush/2.0 * np.cos(th)
         y = centery + radiusv/2.0 * np.sin(th)
         return int(x), int(y)
 
+    def _multiline_check(self, text):
+        "Draw text."
+        split_character = "\n" if isinstance(text, str) else b"\n"
+        return split_character in text
+
+    def _multiline_split(self, text):
+        split_character = "\n" if isinstance(text, str) else b"\n"
+        return text.split(split_character)
+
     def arc(self, box, start, end, fill=None, width=1, line=False, linecenter=False, fillcolor=None):
         "Draw an arc."
+        if fillcolor is not None:
+            fill = fillcolor
         ink, fill = self._getink(fill)
-        if ink is not None:
+        if ink is not None or fill is not None:
             center, axis1, axis2 = self._get_ell_elements(box)
             axes = (axis1//2, axis2//2)
-            if fillcolor is not None:
-                ink = fillcolor
-            cv2.ellipse(self._img_instance, center, axes, 0, start, end, ink, width)
+            if linecenter:
+                if fillcolor:
+                    cv2.ellipse(self._img_instance, center, axes, 0, start, end, fillcolor, -1)
+                else:
+                    cv2.ellipse(self._img_instance, center, axes, 0, start, end, fillcolor, width)
+                    startx, starty = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, start)
+                    endx, endy = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, end)
+                    st = (startx, starty)
+                    e = (endx, endy)
+                    cv2.line(self._img_instance, center, st, ink, width)
+                    cv2.line(self._img_instance, center, e, ink, width)
+            else:
+                cv2.ellipse(self._img_instance, center, axes, 0, start, end, ink, width)
             if line:
                 startx, starty = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, start)
                 endx, endy = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, end)
@@ -1403,16 +1842,18 @@ class ImageDraw(object):
                     mid_chord = ((mid_line[0]+midx)//2, (mid_line[1]+midy)//2)
                     h, w = self._img_instance.shape[:2]
                     mask = np.zeros((h + 2, w + 2), np.uint8)
-                    cv2.floodFill(self._img_instance, mask, mid_chord, 255);
+                    cv2.floodFill(self._img_instance, mask, mid_chord, fillcolor);
 
     def bitmap(self, xy, bitmap, fill=None):
         "Draw a bitmap."
+        raise NotImplementedError("bitmap() has been not implemented in this library. ")
+        # there is still a bug in composite with it, needs fix, outcomment previous and find it
         ink, fill = self._getink(fill)
         if ink is None:
             ink = fill
         if ink is not None:
-            box = (xy[0], xy[1], bitmap.shape[1]+xy[0], bitmap.shape[0]+xy[1])
-            self.img.paste(ink, box, mask=bitmap)
+            box = (xy[0], xy[1], bitmap._instance.shape[1]+xy[0], bitmap._instance.shape[0]+xy[1])
+            self.img.paste(ink, box, mask=bitmap._instance)
             # self.draw.draw_bitmap(xy, bitmap.im, ink)
 
     def chord(self, box, start, end, fill=None, outline=None, width=1):
@@ -1435,45 +1876,21 @@ class ImageDraw(object):
         if ink is not None and ink != fill:
             cv2.ellipse(self._img_instance, ebox, ink, width)
 
-    def pieslice(self, box, start, end, fill=None, outline=None, width=0):
-        "Draw a pieslice."
-        ink, fill = self._getink(outline, fill)
-        if fill is not None:
-            self.arc(box, start, end, fill, width, fillcolor=fill)
-            # self.draw.draw_pieslice(xy, start, end, fill, 1)
-        if ink is not None and ink != fill:
-            self.arc(box, start, end, ink, width, linecenter=True)
-            # self.draw.draw_pieslice(xy, start, end, ink, 0, width)
-
-    def point(self, xy, fill=None, width=3):
-        "Draw a point."
-        ink, fill = self._getink(fill)
-        coord = self._get_coordinates(xy)
-        for co in range(len(coord), 2):
-            elem = (coord[co], coord[co+1])
-            cv2.line(self._img_instance, elem, elem, ink, width)
-
-    def polygon(self, xy, fill=None, outline=None):
-        "Draw a polygon."
-        ink, fill = self._getink(outline, fill)
-        coord = self._get_coordinates(xy)
-        coord = np.reshape(coord, (len(coord)/2, 2))
-        if fill is not None:
-            # self.draw.draw_polygon(xy, fill, 1)
-            cv2.fillPoly(self._img_instance, coord, fill)
-        if ink is not None and ink != fill:
-            # self.draw.draw_polygon(xy, ink, 0)
-            cv2.polylines(self._img_instance, coord, True, ink)
+    def getfont(self):
+        """Get the current default font.
+        :returns: An image font."""
+        if not self.font:
+            import ImageFont
+            self.font = ImageFont.load_default()
+        return self.font
 
     def line(self, xy, fill=None, width=1, joint=None):
         "Draw a line."
         ink = self._getink(fill)[0]
         coord = self._get_coordinates(xy)
-        print(coord)
         for co in range(0, len(coord), 4):
             start = (coord[co], coord[co+1])
             end = (coord[co+2], coord[co+3])
-            print(start, end, ink, width)
             cv2.line(self._img_instance, start, end, ink, width)
         if joint == "curve" and width > 4:
             for i in range(1, len(xy)-1):
@@ -1528,6 +1945,71 @@ class ImageDraw(object):
                         ]
                     self.line(gapCoords, fill, width=3)
 
+    def multiline_text(self, xy, text, fill=None, font=cv2.FONT_HERSHEY_SIMPLEX, anchor=None,
+                       spacing=4, align="left", direction=None, features=None, scale=0.4, thickness=1):
+        widths = []
+        max_width = 0
+        lines = self._multiline_split(text)
+        line_spacing = self.textsize('A', font=font, scale=scale, thickness=thickness)[1] + spacing
+        for line in lines:
+            line_width, line_height = self.textsize(line, font, scale=scale, thickness=thickness)
+            widths.append(line_width)
+            max_width = max(max_width, line_width)
+        left, top = xy
+        for idx, line in enumerate(lines):
+            if align == "left":
+                pass  # left = x
+            elif align == "center":
+                left += (max_width - widths[idx]) / 2.0
+            elif align == "right":
+                left += (max_width - widths[idx])
+            else:
+                raise ValueError('align must be "left", "center" or "right"')
+            self.text((left, top), line, fill, font, anchor,
+                      direction=direction, features=features)
+            top += line_spacing
+            left = xy[0]
+
+    def multiline_textsize(self, text, font=cv2.FONT_HERSHEY_SIMPLEX, spacing=4, direction=None, features=None, scale=0.4, thickness=1):
+        max_width = 0
+        lines = self._multiline_split(text)
+        line_spacing = self.textsize('A', font=font, scale=scale, thickness=thickness)[1] + spacing
+        for line in lines:
+            line_width, line_height = self.textsize(line, font, spacing, direction, features, scale=scale, thickness=thickness)
+            max_width = max(max_width, line_width)
+        return max_width, len(lines)*line_spacing - spacing
+
+    def pieslice(self, box, start, end, fill=None, outline=None, width=0):
+        "Draw a pieslice."
+        ink, fill = self._getink(outline, fill)
+        if fill is not None:
+            self.arc(box, start, end, fill, width, linecenter=True, fillcolor=fill)
+            # self.draw.draw_pieslice(xy, start, end, fill, 1)
+        if ink is not None and ink != fill:
+            self.arc(box, start, end, ink, width, linecenter=True)
+            # self.draw.draw_pieslice(xy, start, end, ink, 0, width)
+
+    def point(self, xy, fill=None, width=1):
+        "Draw a point."
+        ink, fill = self._getink(fill)
+        coord = self._get_coordinates(xy)
+        for co in range(0, len(coord), 2):
+            elem = (coord[co], coord[co+1])
+            # cv2.line(self._img_instance, elem, elem, ink, width)
+            cv2.circle(self._img_instance, elem, width//2, ink, thickness=-1)
+
+    def polygon(self, xy, fill=None, outline=None):
+        "Draw a polygon."
+        ink, fill = self._getink(outline, fill)
+        coord = self._get_coordinates(xy)
+        coord = np.reshape(coord, (len(coord)/2, 2))
+        if fill is not None:
+            # self.draw.draw_polygon(xy, fill, 1)
+            cv2.fillPoly(self._img_instance, [coord], fill)
+        if ink is not None and ink != fill:
+            # self.draw.draw_polygon(xy, ink, 0)
+            cv2.polylines(self._img_instance, [coord], True, ink)
+
     def rectangle(self, xy, fill=None, outline=None, width=1):
         "Draw a rectangle."
         ink, fill = self._getink(outline, fill)
@@ -1560,6 +2042,43 @@ class ImageDraw(object):
             self.ink = 0.0
         if channels == 1 and depth == np.float64:
             self.ink = 0.0
+
+    def text(self, xy, text, fill=None, font=cv2.FONT_HERSHEY_SIMPLEX, anchor=None, scale=0.4, thickness=1, *args, **kwargs):
+        fontFace = font
+        fontScale = scale
+        if self._multiline_check(text):
+            return self.multiline_text(xy, text, fill, font, anchor, scale=scale, thickness=thickness, *args, **kwargs)
+        ink, fill = self._getink(fill)
+        if fontFace is None:
+            fontFace = self.getfont()
+        if ink is None:
+            ink = fill
+        if ink is not None:
+            # try:
+            #     mask, offset = font.getmask2(text, self.fontmode, *args, **kwargs)
+            #     xy = xy[0] + offset[0], xy[1] + offset[1]
+            # except AttributeError:
+            #     try:
+            #         mask = font.getmask(text, self.fontmode, *args, **kwargs)
+            #     except TypeError:
+            #         mask = font.getmask(text)
+            # self.draw.draw_bitmap(xy, mask, ink)
+            w, h = self.textsize(text, font=fontFace, scale=scale, thickness=thickness)
+            xy = (xy[0], xy[1]+h)
+            cv2.putText(self._img_instance, text, xy, fontFace, fontScale, ink, thickness)
+
+    def textsize(self, text, font=cv2.FONT_HERSHEY_SIMPLEX, spacing=4, direction=None, features=None, scale=0.4, thickness=1):
+        "Get the size of a given string, in pixels."
+        fontFace = font
+        fontScale = scale
+        if self._multiline_check(text):
+            return self.multiline_textsize(text, font, spacing, direction, features, scale=scale, thickness=thickness)
+        if font is None:
+            font = self.getfont()
+        size = cv2.getTextSize(text, fontFace, fontScale, thickness)
+        text_width = size[0][0]
+        text_height = size[0][1]
+        return (text_width, text_height)
 
 def Draw(im, mode=None):
     """
@@ -1993,7 +2512,7 @@ def composite(background, foreground, mask):
     foreground = foreground.astype(float)
     background = background.astype(float)
     # Normalize the alpha mask to keep intensity between 0 and 1
-    alphamask = alphamask.astype(float)/255
+    alphamask = mask.astype(float)/255
     # Multiply the foreground with the alpha mask
     foreground = cv2.multiply(alphamask, foreground)
     # Multiply the background with ( 1 - alpha )
@@ -2124,7 +2643,7 @@ if __name__ == '__main__':
     # import PILasOPENCV as Image
     # im = Image.new("RGB", (512, 512), "white")
 
-    im = new("RGB", (512, 512), "white")
+    im = new("RGB", (512, 512), "red")
     im.show()
     print (type(im))
     print(im.format, im.size, im.mode)
