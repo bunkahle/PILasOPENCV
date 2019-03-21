@@ -73,12 +73,18 @@ You can export the cv2/numpy image from an Image instance with the command getim
 This is a very unstable development version. Use with care. Not much testing has been done to it.
 
 # TO DO:
-ImageFilter, ImageFont, ImageChops, ImageDraw are not implemented yet.
+ImageFilter, ImageFont, ImageChops, are not implemented yet.
 
-ImageMode, ImageColor are implemented but have not been fully tested.
+ImageMode, ImageColor, ImageDraw are implemented but have not been fully tested.
+Some functions are missing and are not implemented.
 If you want to import them, import them with:
 
-    from PILasOPENCV import ImageMode, ImageColor
+    import PILasOPENCV as ImageMode
+    import PILasOPENCV as ImageColor
+    import PILasOPENCV as ImageDraw
+
+If you want to fork this project, feel free to do so. Give me a message in case you are forking and improving the code.
+abunkahle@t-online.de
 
 # Dependencies:
 You need to have numpy and opencv installed to run the module.
