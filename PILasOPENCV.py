@@ -1866,7 +1866,7 @@ class ImageDraw(object):
             self.arc(box, start, end, ink, width, line=True)
             # self.draw.draw_chord(xy, start, end, ink, 0, width)
 
-    def ellipse(self, box, fill=None, outline=None, width=0):
+    def ellipse(self, box, fill=None, outline=None, width=1):
         "Draw an ellipse inside the bounding box like cv2.ellipse(img, box, color[, thickness)]"
         ink, fill = self. _getink(outline, fill)
         center, axis1, axis2 = self._get_ell_elements(box)
@@ -1979,7 +1979,7 @@ class ImageDraw(object):
             max_width = max(max_width, line_width)
         return max_width, len(lines)*line_spacing - spacing
 
-    def pieslice(self, box, start, end, fill=None, outline=None, width=0):
+    def pieslice(self, box, start, end, fill=None, outline=None, width=1):
         "Draw a pieslice."
         ink, fill = self._getink(outline, fill)
         if fill is not None:
@@ -2002,13 +2002,22 @@ class ImageDraw(object):
         "Draw a polygon."
         ink, fill = self._getink(outline, fill)
         coord = self._get_coordinates(xy)
-        coord = np.reshape(coord, (len(coord)/2, 2))
+        coord = np.array(coord, np.int32)
+        coord = np.reshape(coord, (len(coord)//2, 2))
         if fill is not None:
             # self.draw.draw_polygon(xy, fill, 1)
-            cv2.fillPoly(self._img_instance, [coord], fill)
+            try:
+                cv2.fillPoly(self._img_instance, [coord], fill)
+            except:
+                coord = coord.reshape((-1, 1, 2))
+                cv2.fillPoly(self._img_instance, [coord], fill)
         if ink is not None and ink != fill:
             # self.draw.draw_polygon(xy, ink, 0)
-            cv2.polylines(self._img_instance, [coord], True, ink)
+            try:
+                cv2.polylines(self._img_instance, [coord], True, ink)
+            except:
+                coord = coord.reshape((-1, 1, 2))
+                cv2.polylines(self._img_instance, [coord], True, ink)
 
     def rectangle(self, xy, fill=None, outline=None, width=1):
         "Draw a rectangle."
@@ -2492,6 +2501,10 @@ def open(fl, mode='r'):
         # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
         img = Image(_instance, fl.name)
         return img
+    if isinstance(fl, cStringIO.InputType):
+        fl.seek(0)
+        img_array = np.asarray(bytearray(fl.read()), dtype=np.uint8)
+        return cv2.imdecode(img_array, 1)
     if hasattr(fl, 'mode'):
         image = np.array(fl)
         _mode = fl.mode
@@ -2615,9 +2628,18 @@ def radial_gradient(mode, size=256):
 
 
 if __name__ == '__main__':
-
     # var init
     testfile = "lena.jpg"
+    if os.path.isfile("lena.jpg"):
+        testfile = "lena.jpg"
+    elif os.path.isfile("Images/lena.jpg"):
+        testfile = "Images/lena.jpg"
+    else:
+        import urllib2, cStringIO
+        imgdata = urllib2.urlopen("https://raw.githubusercontent.com/bunkahle/PILasOPENCV/master/tests/lena.jpg").read()
+        img = open(cStringIO.StringIO(imgdata))
+        temp = Image(img, format="RGB")
+        temp.save(testfile)
     outfile1 = "lena1.bmp"
     outfile2 = "lena2.bmp"
     thsize = (128, 128)
@@ -2642,14 +2664,12 @@ if __name__ == '__main__':
     # if you import the library from site-packages import like this:
     # import PILasOPENCV as Image
     # im = Image.new("RGB", (512, 512), "white")
-
     im = new("RGB", (512, 512), "red")
     im.show()
     print (type(im))
     print(im.format, im.size, im.mode)
     # None (512, 512) RGB
     # <class 'Image'>
-
     # im = Image.open(testfile)
     im = open(testfile)
     print(im.format, im.size, im.mode)
@@ -2659,7 +2679,6 @@ if __name__ == '__main__':
     small = im.copy()
     small.thumbnail(thsize)
     small.show()
-
     region = im.crop(box)
     print("region",region.format, region.size, region.mode)
     # region = region.transpose(Image.ROTATE_180)
@@ -2667,13 +2686,3 @@ if __name__ == '__main__':
     region.show()
     im.paste(region, box)
     im.show()
-    # with open(testfile, 'rb') as img:
-    #     #a.save(img, 'text.jpg')
-    #     b = a.open(img)
-
-    # a.open(pil_image)
-    # d = ImageDraw(a.get_instance)
-    # b = a.copy()
-    # d.rectangle([(10,10),(100,200)], fill=(255,255,0))
-    # a.save('output.jpg')
-    # a.show()
