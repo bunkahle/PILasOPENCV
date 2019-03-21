@@ -1297,6 +1297,7 @@ class Image(object):
 class ImageDraw(object):
     def __init__(self, img, mode=None):
         try:
+            self.img = img
             self._img_instance = img._instance
             self.mode = Image()._get_mode(self._img_instance.shape, self._img_instance.dtype)
             self.setink()
@@ -1374,23 +1375,19 @@ class ImageDraw(object):
         return center, axis1, axis2
 
     def _get_pointFromEllipseAngle(self, centerx, centery, radiush, radiusv, ang):
-        c = np.cos(ang)
-        s = np.sin(ang)
-        ta = s / c  # tan(a)
-        tt = ta * radiush / radiusv  # tan(t)
-        d = 1. / np.sqrt(1. + tt * tt)
-        x = int(round(centerx + np.copysign(radiush * d, c)))
-        y = int(round(centery + np.copysign(radiusv * tt * d, s)))
-        return x, y
+        th = np.radians(ang)
+        ratio = (radiush/2.0)/float(radiusv/2.0)
+        x = centerx + radiush/2.0 * np.cos(th)
+        y = centery + radiusv/2.0 * np.sin(th)
+        return int(x), int(y)
 
-    def arc(self, box, start, end, fill=None, width=0, line=False, linecenter=False, fillcolor=None):
+    def arc(self, box, start, end, fill=None, width=1, line=False, linecenter=False, fillcolor=None):
         "Draw an arc."
         ink, fill = self._getink(fill)
         if ink is not None:
             center, axis1, axis2 = self._get_ell_elements(box)
             axes = (axis1//2, axis2//2)
             if fillcolor is not None:
-                width = -1
                 ink = fillcolor
             cv2.ellipse(self._img_instance, center, axes, 0, start, end, ink, width)
             if line:
@@ -1398,11 +1395,27 @@ class ImageDraw(object):
                 endx, endy = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, end)
                 st = (startx, starty)
                 e = (endx, endy)
-                cv2.line(self._img_instance, st, e, ink, abs(width))
+                cv2.line(self._img_instance, st, e, ink, width)
                 if fillcolor is not None:
-                    pass
+                    mid_line = ((startx+endx)//2, (starty+endy)//2)
+                    mid_ang = (start+end)//2
+                    midx, midy = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, mid_ang)
+                    mid_chord = ((mid_line[0]+midx)//2, (mid_line[1]+midy)//2)
+                    h, w = self._img_instance.shape[:2]
+                    mask = np.zeros((h + 2, w + 2), np.uint8)
+                    cv2.floodFill(self._img_instance, mask, mid_chord, 255);
 
-    def chord(self, box, start, end, fill=None, outline=None, width=0):
+    def bitmap(self, xy, bitmap, fill=None):
+        "Draw a bitmap."
+        ink, fill = self._getink(fill)
+        if ink is None:
+            ink = fill
+        if ink is not None:
+            box = (xy[0], xy[1], bitmap.shape[1]+xy[0], bitmap.shape[0]+xy[1])
+            self.img.paste(ink, box, mask=bitmap)
+            # self.draw.draw_bitmap(xy, bitmap.im, ink)
+
+    def chord(self, box, start, end, fill=None, outline=None, width=1):
         "Draw a chord."
         ink, fill = self._getink(outline, fill)
         if fill is not None:
