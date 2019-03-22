@@ -11,7 +11,7 @@ or you donwload the module and install it with:
 
     python setup.py install
     
-and you change the import command at the beginning of your project files from
+and then you change the import command at the beginning of your project files from
 
     from PIL import Image
     
@@ -70,18 +70,20 @@ You can export the cv2/numpy image from an Image instance with the command getim
     cv2.waitKey(0)
     
 # Attention:
-This is a very unstable development version. Use with care. Not much testing has been done to it.
+This is a very unstable development version. Use with care. Not much testing has been done to it though tests have been done. They can be found in the tests directory.
 
 # TO DO:
-ImageFilter, ImageFont, ImageChops, are not implemented yet.
+ImageFont is not implemented yet.
 
-ImageMode, ImageColor, ImageDraw are implemented but have not been fully tested.
-Some functions are missing and are not implemented.
+ImageMode, ImageColor, ImageDraw are, ImageFilter, ImageChops are implemented but have not been fully tested.
+Some functions/methods of these classes are missing and are not implemented though.
 If you want to import them, import them with:
 
     import PILasOPENCV as ImageMode
     import PILasOPENCV as ImageColor
     import PILasOPENCV as ImageDraw
+    import PILasOPENCV as ImageFilter
+    import PILasOPENCV as ImageChops
 
 If you want to fork this project, feel free to do so. Give me a message in case you are forking and improving the code.
 abunkahle@t-online.de
