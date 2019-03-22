@@ -734,6 +734,37 @@ class Image(object):
         mother[sel[0]:sel[2], sel[1]:sel[3]] = childpart
         return mother
 
+    def _scaleTo8Bit(self, image, div, displayMin=None, displayMax=None):
+       if displayMin == None:
+           displayMin = np.min(image)
+       if displayMax == None:
+          displayMax = np.max(image)
+       np.clip(image, displayMin, displayMax, out=image)
+       image = image - displayMin
+       cf = 255. / (displayMax - displayMin)
+       imageOut = (cf*image).astype(np.uint8)
+       return imageOut
+
+    def _filter_kernel(self, fa):
+        kernel = np.array(fa[3], dtype=np.float32)/fa[1]
+        kernel = kernel.reshape(fa[0])
+        # print(kernel)
+        return kernel
+
+    def filter(self, filtermethod):
+        "Filters this image using the given filter."
+        fa = filtermethod.filterargs
+        if filtermethod == EMBOSS:
+            _im = self._instance.astype(np.float32)
+            _im = cv2.filter2D(_im, -1, self._filter_kernel(fa))
+            _im = self._scaleTo8Bit(_im, fa[2])
+        elif filtermethod == CONTOUR:
+            _im = cv2.filter2D(self._instance, -1, self._filter_kernel(fa))
+            _im = ~_im
+        else:
+            _im = cv2.filter2D(self._instance, -1, self._filter_kernel(fa))
+        return Image(_im)
+
     def getband(self, channel):
         channels, depth = self._get_channels_and_depth(self._mode)
         if channels == 1:
@@ -2278,11 +2309,6 @@ class ImageMode(object):
         _modes = modes
         return _modes[mode]    
 
-class ImageFilter(object):
-    pass
-
-
-
 def _check_size(size):
     """
     Common check to enforce type and sanity check on size tuples
@@ -2626,6 +2652,265 @@ def radial_gradient(mode, size=256):
                 gradient[y, x] = (int(r), int(g), int(b), int(a))
         return gradient
 
+def constant(image, value):
+    "Fill a channel with a given grey level"
+    return Image.new("L", image.size, value)
+
+def duplicate(image):
+    "Create a copy of a channel"
+    return image.copy()
+
+def invert(image, im=None):
+    "Invert a channel"
+    if im is None:
+        return ~image.getim()
+    else:
+        return ~im
+
+def _reduce_images(image1, image2):
+    "bring two images to an identical size using the minimum side of each image"
+    s0 = min(image1._instance.shape[0], image2._instance.shape[0])
+    s1 = min(image1._instance.shape[1], image2._instance.shape[1])
+    image1_copy = image1._instance[:s0,:s1]
+    image2_copy = image2._instance[:s0,:s1]
+    return image1_copy, image2_copy
+
+def lighter(image1, image2):
+    "Select the lighter pixels from each image"
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.maximum(image1_copy, image2_copy)
+
+def darker(image1, image2):
+    "Select the darker pixels from each image"
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.minimum(image1_copy, image2_copy)
+
+def difference(image1, image2):
+    "Subtract one image from another"
+    # does not work as in PIL, needs to be fixed
+    # Calculate absolute difference
+    # (abs(image1 - image2)).
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.absolute(np.subtract(image1_copy, image2_copy))
+
+def multiply(image1, image2):
+    "Superimpose two positive images"
+    # broken, needs to be fixed
+    # Superimpose positive images
+    # (image1 * image2 / MAX).
+    # <p>
+    # Superimposes two images on top of each other. If you multiply an
+    # image with a solid black image, the result is black. If you multiply
+    # with a solid white image, the image is unaffected.
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    div = np.divide(image2_copy, 255)
+    return np.multiply(image1_copy, div)
+
+def screen(image1, image2):
+    "Superimpose two negative images"
+    raise NotImplementedError("screen() has been not implemented in this library. ")
+    # Superimpose negative images
+    # (MAX - ((MAX - image1) * (MAX - image2) / MAX)).
+    # <p>
+    # Superimposes two inverted images on top of each other.
+
+def add(image1, image2, scale=1.0, offset=0):
+    "Add two images"
+    # ((image1 + image2) / scale + offset).
+    # Adds two images, dividing the result by scale and adding the
+    # offset. If omitted, scale defaults to 1.0, and offset to 0.0.
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.add(image1_copy, image2_copy)/scale+offset
+
+def subtract(image1, image2, scale=1.0, offset=0):
+    "Subtract two images"
+    # Subtract images
+    # ((image1 - image2) / scale + offset).
+    # Subtracts two images, dividing the result by scale and adding the
+    # offset. If omitted, scale defaults to 1.0, and offset to 0.0.
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.subtract(image1_copy, image2_copy)/scale+offset
+
+def add_modulo(image1, image2):
+    "Add two images without clipping"
+    # Add images without clipping
+    # ((image1 + image2) % MAX).
+    # Adds two images, without clipping the result.
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.mod(np.add(image1_copy, image2_copy), np.maximum(image1_copy, image2_copy))
+
+def subtract_modulo(image1, image2):
+    "Subtract two images without clipping"
+    # Subtract images without clipping
+    # ((image1 - image2) % MAX).
+    # Subtracts two images, without clipping the result.
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.mod(np.subtract(image1_copy, image2_copy), np.maximum(image1_copy, image2_copy))
+
+def logical_and(image1, image2):
+    "Logical and between two images"
+    # Logical AND
+    # (image1 and image2).
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.logical_and(image1_copy, image2_copy)
+
+
+def logical_or(image1, image2):
+    "Logical or between two images"
+    # Logical OR
+    # (image1 or image2).
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.logical_or(image1_copy, image2_copy)
+
+def logical_xor(image1, image2):
+    "Logical xor between two images"
+    # Logical XOR
+    # (image1 xor image2).
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    return np.logical_xor(image1_copy, image2_copy)
+
+class Filter(object):
+    pass
+
+class MultibandFilter(Filter):
+    pass
+
+class BuiltinFilter(MultibandFilter):
+    def filter(self, image):
+        if image.mode == "P":
+            raise ValueError("cannot filter palette images")
+        return image.filter(*self.filterargs)
+
+class GaussianBlur(MultibandFilter):
+    """Gaussian blur filter.
+
+    :param radius: Blur radius.
+    """
+    name = "GaussianBlur"
+
+    def __init__(self, radius=2):
+        self.radius = radius
+
+    def filter(self, image):
+        return image.gaussian_blur(self.radius)
+
+class BoxBlur(MultibandFilter):
+    """Blurs the image by setting each pixel to the average value of the pixels
+    in a square box extending radius pixels in each direction.
+    Supports float radius of arbitrary size. Uses an optimized implementation
+    which runs in linear time relative to the size of the image
+    for any radius value.
+
+    :param radius: Size of the box in one direction. Radius 0 does not blur,
+                   returns an identical image. Radius 1 takes 1 pixel
+                   in each direction, i.e. 9 pixels in total.
+    """
+    name = "BoxBlur"
+
+    def __init__(self, radius):
+        self.radius = radius
+
+    def filter(self, image):
+        return image.box_blur(self.radius)
+
+class UnsharpMask(MultibandFilter):
+    """Unsharp mask filter.
+
+    See Wikipedia's entry on `digital unsharp masking`_ for an explanation of
+    the parameters.
+
+    :param radius: Blur Radius
+    :param percent: Unsharp strength, in percent
+    :param threshold: Threshold controls the minimum brightness change that
+      will be sharpened
+
+    .. _digital unsharp masking: https://en.wikipedia.org/wiki/Unsharp_masking#Digital_unsharp_masking
+
+    """  # noqa: E501
+    name = "UnsharpMask"
+
+    def __init__(self, radius=2, percent=150, threshold=3):
+        self.radius = radius
+        self.percent = percent
+        self.threshold = threshold
+
+    def filter(self, image):
+        return image.unsharp_mask(self.radius, self.percent, self.threshold)
+
+class BLUR(BuiltinFilter):
+    name = "Blur"
+    filterargs = (5, 5), 16, 0, (
+        1,  1,  1,  1,  1,
+        1,  0,  0,  0,  1,
+        1,  0,  0,  0,  1,
+        1,  0,  0,  0,  1,
+        1,  1,  1,  1,  1)
+
+class CONTOUR(BuiltinFilter):
+    name = "Contour"
+    filterargs = (3, 3), 1, 255, (
+        -1, -1, -1,
+        -1,  8, -1,
+        -1, -1, -1)
+
+class DETAIL(BuiltinFilter):
+    name = "Detail"
+    filterargs = (3, 3), 6, 0, (
+        0, -1,  0,
+        -1, 10, -1,
+        0, -1,  0)
+
+class EDGE_ENHANCE(BuiltinFilter):
+    name = "Edge-enhance"
+    filterargs = (3, 3), 2, 0, (
+        -1, -1, -1,
+        -1, 10, -1,
+        -1, -1, -1)
+
+class EDGE_ENHANCE_MORE(BuiltinFilter):
+    name = "Edge-enhance More"
+    filterargs = (3, 3), 1, 0, (
+        -1, -1, -1,
+        -1,  9, -1,
+        -1, -1, -1)
+
+class EMBOSS(BuiltinFilter):
+    name = "Emboss"
+    filterargs = (3, 3), 1, 128, (
+        -1,  0,  0,
+        0,  1,  0,
+        0,  0,  0)
+
+class FIND_EDGES(BuiltinFilter):
+    name = "Find Edges"
+    filterargs = (3, 3), 1, 0, (
+        -1, -1, -1,
+        -1,  8, -1,
+        -1, -1, -1)
+
+class SHARPEN(BuiltinFilter):
+    name = "Sharpen"
+    filterargs = (3, 3), 16, 0, (
+        -2, -2, -2,
+        -2, 32, -2,
+        -2, -2, -2)
+
+class SMOOTH(BuiltinFilter):
+    name = "Smooth"
+    filterargs = (3, 3), 13, 0, (
+        1,  1,  1,
+        1,  5,  1,
+        1,  1,  1)
+
+
+class SMOOTH_MORE(BuiltinFilter):
+    name = "Smooth More"
+    filterargs = (5, 5), 100, 0, (
+        1,  1,  1,  1,  1,
+        1,  5,  5,  5,  1,
+        1,  5, 44,  5,  1,
+        1,  5,  5,  5,  1,
+        1,  1,  1,  1,  1)
 
 if __name__ == '__main__':
     # var init
