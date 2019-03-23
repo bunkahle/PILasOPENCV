@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import re, os, sys, tempfile
 import numbers
+import freetype
 
 __author__ = 'imressed, bunkus'
 # Constants (also defined in _imagingmodule.c!)
@@ -81,6 +82,9 @@ SAVE = {}
 SAVE_ALL = {}
 EXTENSION = {".bmp": "BMP", ".dib": "DIB", ".jpeg": "JPEG", ".jpg": "JPEG", ".jpe": "JPEG", ".jp2": "JPEG2000", ".png": "PNG",
              ".webp": "WEBP", ".pbm": "PBM", ".pgm": "PGM", ".ppm": "PPM", ".sr": "SR", ".ras": "RAS", ".tif": "TIFF", ".tiff": "TIFF"}
+CV2_FONTS = [cv2.FONT_HERSHEY_SIMPLEX, cv2.FONT_HERSHEY_PLAIN, cv2.FONT_HERSHEY_DUPLEX,  
+cv2.FONT_HERSHEY_COMPLEX, cv2.FONT_HERSHEY_TRIPLEX, cv2.FONT_HERSHEY_COMPLEX_SMALL,  
+cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, cv2.FONT_HERSHEY_SCRIPT_COMPLEX]             
 DECODERS = {}
 ENCODERS = {}
 
@@ -676,9 +680,14 @@ class Image(object):
                     if not(box[2]-box[0]==_img_color.shape[1] and box[3]-box[1]==_img_color.shape[0]):
                         raise ValueError("images do not match")
             # convert modes
-            if img_color._instance.shape[2] != self._instance.shape[2] or img_color._instance.dtype != self._instance.dtype:
+            if len(img_color._instance.shape) == 3:
+                if img_color._instance.shape[2] != self._instance.shape[2] or img_color._instance.dtype != self._instance.dtype:
+                    dest_mode = self._mode
+                    _img_color = self._convert(dest_mode, obj=_img_color)
+            elif len(img_color._instance.shape) != len(self._instance.shape):
                 dest_mode = self._mode
                 _img_color = self._convert(dest_mode, obj=_img_color)
+
         else: # pasting a colorbox 
             if box is None:
                 raise ValueError("cannot determine region size; use 4-item box")
@@ -693,17 +702,20 @@ class Image(object):
             # enlarge the image _img_color without resizing to the new_canvas
             new_canvas = np.zeros(self._instance.shape, dtype=self._instance.dtype)
             new_canvas = self._paste(new_canvas, _img_color, box[0], box[1])
-            if mask.shape[2] == 4: # RGBA
-                r, g, b, _mask = self.split(mask)
-            elif mask.shape[2] == 1:
-                _mask = mask.copy()
+            if len(mask._instance.shape) == 3:
+                if mask._instance.shape[2] == 4: # RGBA
+                    r, g, b, _mask = self.split(mask)
+                elif mask._instance.shape[2] == 1:
+                    _mask = mask._instance.copy()
+            else:
+                _mask = mask._instance.copy()
             
             if _mask.shape[:2] != new_canvas.shape[:2]:
                 _new_mask = np.zeros(self._instance.shape[:2], dtype=self._instance.dtype)
                 _new_mask = self._paste(_new_mask, _mask, box[0], box[1])
             else:
                 _new_mask = _mask
-            self._instance = composite(self._instance, new_canvas, _new_mask)
+            self._instance = composite(self._instance, new_canvas, _new_mask, np_image=True)
 
     def _paste(self, mother, child, x, y):
         "Pastes the numpy image child into the numpy image mother at position (x, y)"
@@ -753,6 +765,8 @@ class Image(object):
 
     def filter(self, filtermethod):
         "Filters this image using the given filter."
+        if filtermethod.name == "GaussianBlur":
+            return GaussianBlur().filter(self)
         fa = filtermethod.filterargs
         if filtermethod == EMBOSS:
             _im = self._instance.astype(np.float32)
@@ -1131,29 +1145,35 @@ class Image(object):
     def split(self, image=None):
         "splits the image into its color bands"
         if image is None:
-            if self._instance.shape[2] == 1:
-                return self._instance.copy()
-            elif self._instance.shape[2] == 2:
-                l, a = cv2.split(self._instance)
-                return l, a
-            elif self._instance.shape[2] == 3:
-                b, g, r = cv2.split(self._instance)
-                return b, g, r
+            if len(self._instance.shape) == 3:
+                if self._instance.shape[2] == 1:
+                    return self._instance.copy()
+                elif self._instance.shape[2] == 2:
+                    l, a = cv2.split(self._instance)
+                    return l, a
+                elif self._instance.shape[2] == 3:
+                    b, g, r = cv2.split(self._instance)
+                    return b, g, r
+                else:
+                    b, g, r, a = cv2.split(self._instance)
+                    return b, g, r, a
             else:
-                b, g, r, a = cv2.split(self._instance)
-                return b, g, r, a
+                return self._instance
         else:
-            if image.shape[2] == 1:
-                return image.copy()
-            elif image.shape[2] == 2:
-                l, a = cv2.split(image)
-                return l, a
-            elif image.shape[2] == 3:
-                b, g, r = cv2.split(image)
-                return b, g, r
+            if len(self._instance.shape) == 3:
+                if image.shape[2] == 1:
+                    return image.copy()
+                elif image.shape[2] == 2:
+                    l, a = cv2.split(image)
+                    return l, a
+                elif image.shape[2] == 3:
+                    b, g, r = cv2.split(image)
+                    return b, g, r
+                else:
+                    b, g, r, a = cv2.split(image)
+                    return b, g, r, a
             else:
-                b, g, r, a = cv2.split(image)
-                return b, g, r, a
+                return self._instance
 
     def getchannel(self, channel):
         """
@@ -1332,58 +1352,8 @@ class Image(object):
         """
         pass
 
-"""
-class ImageFont(object):
-    "PIL font wrapper"
-    def _load_pilfont(self, filename):
-        with open(filename, "rb") as fp:
-            for ext in (".png", ".gif", ".pbm"):
-                try:
-                    fullname = os.path.splitext(filename)[0] + ext
-                    image = Image.open(fullname)
-                except Exception:
-                    pass
-                else:
-                    if image and image.mode in ("1", "L"):
-                        break
-            else:
-                raise IOError("cannot find glyph data file")
-            self.file = fullname
-            return self._load_pilfont_data(fp, image)
-
-    def _load_pilfont_data(self, file, image):
-        # read PILfont header
-        if file.readline() != b"PILfont\n":
-            raise SyntaxError("Not a PILfont file")
-        file.readline().split(b";")
-        self.info = []  # FIXME: should be a dictionary
-        while True:
-            s = file.readline()
-            if not s or s == b"DATA\n":
-                break
-            self.info.append(s)
-        # read PILfont metrics
-        data = file.read(256*20)
-        # check image
-        if image.mode not in ("1", "L"):
-            raise TypeError("invalid font image mode")
-        image.load()
-        self.font = Image.core.font(image.im, data)
-
-    def getsize(self, text, *args, **kwargs):
-        return self.font.getsize(text)
-
-    def getmask(self, text, mode="", *args, **kwargs):
-        return self.font.getmask(text, mode)
-
-
-##
-# Wrapper for FreeType fonts.  Application code should use the
-# <b>truetype</b> factory function to create font objects.
-
 class FreeTypeFont(object):
-    "FreeType font wrapper (requires _imagingft service)"
-
+    "FreeType font wrapper (requires python library freetype-py)"
     def __init__(self, font=None, size=10, index=0, encoding="",
                  layout_engine=None):
         # FIXME: use service provider instead
@@ -1392,126 +1362,36 @@ class FreeTypeFont(object):
         self.size = size
         self.index = index
         self.encoding = encoding
-
-        if layout_engine not in (LAYOUT_BASIC, LAYOUT_RAQM):
-            layout_engine = LAYOUT_BASIC
-            if core.HAVE_RAQM:
-                layout_engine = LAYOUT_RAQM
-        if layout_engine == LAYOUT_RAQM and not core.HAVE_RAQM:
-            layout_engine = LAYOUT_BASIC
-
         self.layout_engine = layout_engine
 
-        if isPath(font):
-            self.font = core.getfont(font, size, index, encoding,
-                                     layout_engine=layout_engine)
+        if os.path.isfile(self.path):
+            self.font = load(self.path, self.size+16)
         else:
-            self.font_bytes = font.read()
-            self.font = core.getfont(
-                "", size, index, encoding, self.font_bytes, layout_engine)
-
-    def _multiline_split(self, text):
-        split_character = "\n" if isinstance(text, str) else b"\n"
-        return text.split(split_character)
-
-    def getname(self):
-        return self.font.family, self.font.style
-
-    def getmetrics(self):
-        return self.font.ascent, self.font.descent
-
+            self.font = None
+    
     def getsize(self, text, direction=None, features=None):
-        size, offset = self.font.getsize(text, direction, features)
-        return (size[0] + offset[0], size[1] + offset[1])
-
-    def getsize_multiline(self, text, direction=None,
-                          spacing=4, features=None):
-        max_width = 0
-        lines = self._multiline_split(text)
-        line_spacing = self.getsize('A')[1] + spacing
-        for line in lines:
-            line_width, line_height = self.getsize(line, direction, features)
-            max_width = max(max_width, line_width)
-
-        return max_width, len(lines)*line_spacing - spacing
-
-    def getoffset(self, text):
-        return self.font.getsize(text)[1]
-
+        # size, offset = self.font.getsize(text, direction, features)
+        # return (size[0] + offset[0], size[1] + offset[1])
+        return None
+    
     def getmask(self, text, mode="", direction=None, features=None):
-        return self.getmask2(text, mode, direction=direction,
-                             features=features)[0]
+        # return self.getmask2(text, mode, direction=direction,
+        #                      features=features)[0]     
+        return None
 
-    def getmask2(self, text, mode="", fill=Image.core.fill, direction=None,
-                 features=None, *args, **kwargs):
-        size, offset = self.font.getsize(text, direction, features)
-        im = fill("L", size, 0)
-        self.font.render(text, im.id, mode == "1", direction, features)
-        return im, offset
-
-    def font_variant(self, font=None, size=None, index=None, encoding=None,
-                     layout_engine=None):
-        '''
-        Create a copy of this FreeTypeFont object,
-        using any specified arguments to override the settings.
-
-        Parameters are identical to the parameters used to initialize this
-        object.
-
-        :return: A FreeTypeFont object.
-        '''
-        return FreeTypeFont(
-            font=self.path if font is None else font,
-            size=self.size if size is None else size,
-            index=self.index if index is None else index,
-            encoding=self.encoding if encoding is None else encoding,
-            layout_engine=layout_engine or self.layout_engine
-        )
-"""
-
-class TransposedFont(object):
-    "Wrapper for writing rotated or mirrored text"
-
-    def __init__(self, font, orientation=None):
-        """
-        Wrapper that creates a transposed font from any existing font
-        object.
-
-        :param font: A font object.
-        :param orientation: An optional orientation.  If given, this should
-            be one of Image.FLIP_LEFT_RIGHT, Image.FLIP_TOP_BOTTOM,
-            Image.ROTATE_90, Image.ROTATE_180, or Image.ROTATE_270.
-        """
-        self.font = font
-        self.orientation = orientation  # any 'transpose' argument, or None
-
-    def getsize(self, text, *args, **kwargs):
-        w, h = self.font.getsize(text)
-        if self.orientation in (Image.ROTATE_90, Image.ROTATE_270):
-            return h, w
-        return w, h
-
-    def getmask(self, text, mode="", *args, **kwargs):
-        im = self.font.getmask(text, mode, *args, **kwargs)
-        if self.orientation is not None:
-            return im.transpose(self.orientation)
-        return im
-
-
-def load(filename):
+def load(filename, size=12):
     """
     Load a font file.  This function loads a font object from the given
     bitmap font file, and returns the corresponding font object.
-
     :param filename: Name of font file.
     :return: A font object.
     :exception IOError: If the file could not be read.
     """
-    f = ImageFont()
-    f._load_pilfont(filename)
-    return f
+    # face = Face('./VeraMono.ttf')
+    face = freetype.Face(filename)
+    face.set_char_size(size*size)
+    return face
 
-'''
 def truetype(font=None, size=10, index=0, encoding="",
              layout_engine=None):
     """
@@ -1537,12 +1417,12 @@ def truetype(font=None, size=10, index=0, encoding="",
     :return: A font object.
     :exception IOError: If the file could not be read.
     """
-
     try:
-        return FreeTypeFont(font, size, index, encoding, layout_engine)
-    except IOError:
+        font = FreeTypeFont(font, size)
+        # index, encoding, layout_engine
+        return font.font
+    except:
         ttf_filename = os.path.basename(font)
-
         dirs = []
         if sys.platform == "win32":
             # check the windows font repository
@@ -1570,24 +1450,18 @@ def truetype(font=None, size=10, index=0, encoding="",
                 for walkfilename in walkfilenames:
                     if ext and walkfilename == ttf_filename:
                         fontpath = os.path.join(walkroot, walkfilename)
-                        return FreeTypeFont(fontpath, size, index,
-                                            encoding, layout_engine)
+                        font = FreeTypeFont(fontpath, size)
+                        return font.font
                     elif (not ext and
                           os.path.splitext(walkfilename)[0] == ttf_filename):
                         fontpath = os.path.join(walkroot, walkfilename)
                         if os.path.splitext(fontpath)[1] == '.ttf':
-                            return FreeTypeFont(fontpath, size, index,
-                                                encoding, layout_engine)
-                        if not ext \
-                           and first_font_with_a_different_extension is None:
-                            first_font_with_a_different_extension = fontpath
-        if first_font_with_a_different_extension:
-            return FreeTypeFont(first_font_with_a_different_extension, size,
-                                index, encoding, layout_engine)
+                            font = FreeTypeFont(fontpath, size)
+                            return font.font
         raise
-'''
 
-def load_path(filename):
+
+def load_path(filename, size=12):
     """
     Load font file. Same as :py:func:`~PIL.ImageFont.load`, but searches for a
     bitmap font along the Python path.
@@ -1604,142 +1478,10 @@ def load_path(filename):
                 else:
                     filename = filename.encode("utf-8")
             try:
-                return load(os.path.join(directory, filename))
+                return load(os.path.join(directory, filename), size)
             except IOError:
                 pass
     raise IOError("cannot find font file")
-
-def load_default():
-    """Load a "better than nothing" default font.
-
-    .. versionadded:: 1.1.4
-
-    :return: A font object.
-    """
-    from io import BytesIO
-    import base64
-    f = ImageFont()
-    f._load_pilfont_data(
-        # courB08
-        BytesIO(base64.b64decode(b'''
-UElMZm9udAo7Ozs7OzsxMDsKREFUQQoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAA//8AAQAAAAAAAAABAAEA
-BgAAAAH/+gADAAAAAQAAAAMABgAGAAAAAf/6AAT//QADAAAABgADAAYAAAAA//kABQABAAYAAAAL
-AAgABgAAAAD/+AAFAAEACwAAABAACQAGAAAAAP/5AAUAAAAQAAAAFQAHAAYAAP////oABQAAABUA
-AAAbAAYABgAAAAH/+QAE//wAGwAAAB4AAwAGAAAAAf/5AAQAAQAeAAAAIQAIAAYAAAAB//kABAAB
-ACEAAAAkAAgABgAAAAD/+QAE//0AJAAAACgABAAGAAAAAP/6AAX//wAoAAAALQAFAAYAAAAB//8A
-BAACAC0AAAAwAAMABgAAAAD//AAF//0AMAAAADUAAQAGAAAAAf//AAMAAAA1AAAANwABAAYAAAAB
-//kABQABADcAAAA7AAgABgAAAAD/+QAFAAAAOwAAAEAABwAGAAAAAP/5AAYAAABAAAAARgAHAAYA
-AAAA//kABQAAAEYAAABLAAcABgAAAAD/+QAFAAAASwAAAFAABwAGAAAAAP/5AAYAAABQAAAAVgAH
-AAYAAAAA//kABQAAAFYAAABbAAcABgAAAAD/+QAFAAAAWwAAAGAABwAGAAAAAP/5AAUAAABgAAAA
-ZQAHAAYAAAAA//kABQAAAGUAAABqAAcABgAAAAD/+QAFAAAAagAAAG8ABwAGAAAAAf/8AAMAAABv
-AAAAcQAEAAYAAAAA//wAAwACAHEAAAB0AAYABgAAAAD/+gAE//8AdAAAAHgABQAGAAAAAP/7AAT/
-/gB4AAAAfAADAAYAAAAB//oABf//AHwAAACAAAUABgAAAAD/+gAFAAAAgAAAAIUABgAGAAAAAP/5
-AAYAAQCFAAAAiwAIAAYAAP////oABgAAAIsAAACSAAYABgAA////+gAFAAAAkgAAAJgABgAGAAAA
-AP/6AAUAAACYAAAAnQAGAAYAAP////oABQAAAJ0AAACjAAYABgAA////+gAFAAAAowAAAKkABgAG
-AAD////6AAUAAACpAAAArwAGAAYAAAAA//oABQAAAK8AAAC0AAYABgAA////+gAGAAAAtAAAALsA
-BgAGAAAAAP/6AAQAAAC7AAAAvwAGAAYAAP////oABQAAAL8AAADFAAYABgAA////+gAGAAAAxQAA
-AMwABgAGAAD////6AAUAAADMAAAA0gAGAAYAAP////oABQAAANIAAADYAAYABgAA////+gAGAAAA
-2AAAAN8ABgAGAAAAAP/6AAUAAADfAAAA5AAGAAYAAP////oABQAAAOQAAADqAAYABgAAAAD/+gAF
-AAEA6gAAAO8ABwAGAAD////6AAYAAADvAAAA9gAGAAYAAAAA//oABQAAAPYAAAD7AAYABgAA////
-+gAFAAAA+wAAAQEABgAGAAD////6AAYAAAEBAAABCAAGAAYAAP////oABgAAAQgAAAEPAAYABgAA
-////+gAGAAABDwAAARYABgAGAAAAAP/6AAYAAAEWAAABHAAGAAYAAP////oABgAAARwAAAEjAAYA
-BgAAAAD/+gAFAAABIwAAASgABgAGAAAAAf/5AAQAAQEoAAABKwAIAAYAAAAA//kABAABASsAAAEv
-AAgABgAAAAH/+QAEAAEBLwAAATIACAAGAAAAAP/5AAX//AEyAAABNwADAAYAAAAAAAEABgACATcA
-AAE9AAEABgAAAAH/+QAE//wBPQAAAUAAAwAGAAAAAP/7AAYAAAFAAAABRgAFAAYAAP////kABQAA
-AUYAAAFMAAcABgAAAAD/+wAFAAABTAAAAVEABQAGAAAAAP/5AAYAAAFRAAABVwAHAAYAAAAA//sA
-BQAAAVcAAAFcAAUABgAAAAD/+QAFAAABXAAAAWEABwAGAAAAAP/7AAYAAgFhAAABZwAHAAYAAP//
-//kABQAAAWcAAAFtAAcABgAAAAD/+QAGAAABbQAAAXMABwAGAAAAAP/5AAQAAgFzAAABdwAJAAYA
-AP////kABgAAAXcAAAF+AAcABgAAAAD/+QAGAAABfgAAAYQABwAGAAD////7AAUAAAGEAAABigAF
-AAYAAP////sABQAAAYoAAAGQAAUABgAAAAD/+wAFAAABkAAAAZUABQAGAAD////7AAUAAgGVAAAB
-mwAHAAYAAAAA//sABgACAZsAAAGhAAcABgAAAAD/+wAGAAABoQAAAacABQAGAAAAAP/7AAYAAAGn
-AAABrQAFAAYAAAAA//kABgAAAa0AAAGzAAcABgAA////+wAGAAABswAAAboABQAGAAD////7AAUA
-AAG6AAABwAAFAAYAAP////sABgAAAcAAAAHHAAUABgAAAAD/+wAGAAABxwAAAc0ABQAGAAD////7
-AAYAAgHNAAAB1AAHAAYAAAAA//sABQAAAdQAAAHZAAUABgAAAAH/+QAFAAEB2QAAAd0ACAAGAAAA
-Av/6AAMAAQHdAAAB3gAHAAYAAAAA//kABAABAd4AAAHiAAgABgAAAAD/+wAF//0B4gAAAecAAgAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYAAAAB
-//sAAwACAecAAAHpAAcABgAAAAD/+QAFAAEB6QAAAe4ACAAGAAAAAP/5AAYAAAHuAAAB9AAHAAYA
-AAAA//oABf//AfQAAAH5AAUABgAAAAD/+QAGAAAB+QAAAf8ABwAGAAAAAv/5AAMAAgH/AAACAAAJ
-AAYAAAAA//kABQABAgAAAAIFAAgABgAAAAH/+gAE//sCBQAAAggAAQAGAAAAAP/5AAYAAAIIAAAC
-DgAHAAYAAAAB//kABf/+Ag4AAAISAAUABgAA////+wAGAAACEgAAAhkABQAGAAAAAP/7AAX//gIZ
-AAACHgADAAYAAAAA//wABf/9Ah4AAAIjAAEABgAAAAD/+QAHAAACIwAAAioABwAGAAAAAP/6AAT/
-+wIqAAACLgABAAYAAAAA//kABP/8Ai4AAAIyAAMABgAAAAD/+gAFAAACMgAAAjcABgAGAAAAAf/5
-AAT//QI3AAACOgAEAAYAAAAB//kABP/9AjoAAAI9AAQABgAAAAL/+QAE//sCPQAAAj8AAgAGAAD/
-///7AAYAAgI/AAACRgAHAAYAAAAA//kABgABAkYAAAJMAAgABgAAAAH//AAD//0CTAAAAk4AAQAG
-AAAAAf//AAQAAgJOAAACUQADAAYAAAAB//kABP/9AlEAAAJUAAQABgAAAAH/+QAF//4CVAAAAlgA
-BQAGAAD////7AAYAAAJYAAACXwAFAAYAAP////kABgAAAl8AAAJmAAcABgAA////+QAGAAACZgAA
-Am0ABwAGAAD////5AAYAAAJtAAACdAAHAAYAAAAA//sABQACAnQAAAJ5AAcABgAA////9wAGAAAC
-eQAAAoAACQAGAAD////3AAYAAAKAAAAChwAJAAYAAP////cABgAAAocAAAKOAAkABgAA////9wAG
-AAACjgAAApUACQAGAAD////4AAYAAAKVAAACnAAIAAYAAP////cABgAAApwAAAKjAAkABgAA////
-+gAGAAACowAAAqoABgAGAAAAAP/6AAUAAgKqAAACrwAIAAYAAP////cABQAAAq8AAAK1AAkABgAA
-////9wAFAAACtQAAArsACQAGAAD////3AAUAAAK7AAACwQAJAAYAAP////gABQAAAsEAAALHAAgA
-BgAAAAD/9wAEAAACxwAAAssACQAGAAAAAP/3AAQAAALLAAACzwAJAAYAAAAA//cABAAAAs8AAALT
-AAkABgAAAAD/+AAEAAAC0wAAAtcACAAGAAD////6AAUAAALXAAAC3QAGAAYAAP////cABgAAAt0A
-AALkAAkABgAAAAD/9wAFAAAC5AAAAukACQAGAAAAAP/3AAUAAALpAAAC7gAJAAYAAAAA//cABQAA
-Au4AAALzAAkABgAAAAD/9wAFAAAC8wAAAvgACQAGAAAAAP/4AAUAAAL4AAAC/QAIAAYAAAAA//oA
-Bf//Av0AAAMCAAUABgAA////+gAGAAADAgAAAwkABgAGAAD////3AAYAAAMJAAADEAAJAAYAAP//
-//cABgAAAxAAAAMXAAkABgAA////9wAGAAADFwAAAx4ACQAGAAD////4AAYAAAAAAAoABwASAAYA
-AP////cABgAAAAcACgAOABMABgAA////+gAFAAAADgAKABQAEAAGAAD////6AAYAAAAUAAoAGwAQ
-AAYAAAAA//gABgAAABsACgAhABIABgAAAAD/+AAGAAAAIQAKACcAEgAGAAAAAP/4AAYAAAAnAAoA
-LQASAAYAAAAA//gABgAAAC0ACgAzABIABgAAAAD/+QAGAAAAMwAKADkAEQAGAAAAAP/3AAYAAAA5
-AAoAPwATAAYAAP////sABQAAAD8ACgBFAA8ABgAAAAD/+wAFAAIARQAKAEoAEQAGAAAAAP/4AAUA
-AABKAAoATwASAAYAAAAA//gABQAAAE8ACgBUABIABgAAAAD/+AAFAAAAVAAKAFkAEgAGAAAAAP/5
-AAUAAABZAAoAXgARAAYAAAAA//gABgAAAF4ACgBkABIABgAAAAD/+AAGAAAAZAAKAGoAEgAGAAAA
-AP/4AAYAAABqAAoAcAASAAYAAAAA//kABgAAAHAACgB2ABEABgAAAAD/+AAFAAAAdgAKAHsAEgAG
-AAD////4AAYAAAB7AAoAggASAAYAAAAA//gABQAAAIIACgCHABIABgAAAAD/+AAFAAAAhwAKAIwA
-EgAGAAAAAP/4AAUAAACMAAoAkQASAAYAAAAA//gABQAAAJEACgCWABIABgAAAAD/+QAFAAAAlgAK
-AJsAEQAGAAAAAP/6AAX//wCbAAoAoAAPAAYAAAAA//oABQABAKAACgClABEABgAA////+AAGAAAA
-pQAKAKwAEgAGAAD////4AAYAAACsAAoAswASAAYAAP////gABgAAALMACgC6ABIABgAA////+QAG
-AAAAugAKAMEAEQAGAAD////4AAYAAgDBAAoAyAAUAAYAAP////kABQACAMgACgDOABMABgAA////
-+QAGAAIAzgAKANUAEw==
-''')), Image.open(BytesIO(base64.b64decode(b'''
-iVBORw0KGgoAAAANSUhEUgAAAx4AAAAUAQAAAAArMtZoAAAEwElEQVR4nABlAJr/AHVE4czCI/4u
-Mc4b7vuds/xzjz5/3/7u/n9vMe7vnfH/9++vPn/xyf5zhxzjt8GHw8+2d83u8x27199/nxuQ6Od9
-M43/5z2I+9n9ZtmDBwMQECDRQw/eQIQohJXxpBCNVE6QCCAAAAD//wBlAJr/AgALyj1t/wINwq0g
-LeNZUworuN1cjTPIzrTX6ofHWeo3v336qPzfEwRmBnHTtf95/fglZK5N0PDgfRTslpGBvz7LFc4F
-IUXBWQGjQ5MGCx34EDFPwXiY4YbYxavpnhHFrk14CDAAAAD//wBlAJr/AgKqRooH2gAgPeggvUAA
-Bu2WfgPoAwzRAABAAAAAAACQgLz/3Uv4Gv+gX7BJgDeeGP6AAAD1NMDzKHD7ANWr3loYbxsAD791
-NAADfcoIDyP44K/jv4Y63/Z+t98Ovt+ub4T48LAAAAD//wBlAJr/AuplMlADJAAAAGuAphWpqhMx
-in0A/fRvAYBABPgBwBUgABBQ/sYAyv9g0bCHgOLoGAAAAAAAREAAwI7nr0ArYpow7aX8//9LaP/9
-SjdavWA8ePHeBIKB//81/83ndznOaXx379wAAAD//wBlAJr/AqDxW+D3AABAAbUh/QMnbQag/gAY
-AYDAAACgtgD/gOqAAAB5IA/8AAAk+n9w0AAA8AAAmFRJuPo27ciC0cD5oeW4E7KA/wD3ECMAn2tt
-y8PgwH8AfAxFzC0JzeAMtratAsC/ffwAAAD//wBlAJr/BGKAyCAA4AAAAvgeYTAwHd1kmQF5chkG
-ABoMIHcL5xVpTfQbUqzlAAAErwAQBgAAEOClA5D9il08AEh/tUzdCBsXkbgACED+woQg8Si9VeqY
-lODCn7lmF6NhnAEYgAAA/NMIAAAAAAD//2JgjLZgVGBg5Pv/Tvpc8hwGBjYGJADjHDrAwPzAjv/H
-/Wf3PzCwtzcwHmBgYGcwbZz8wHaCAQMDOwMDQ8MCBgYOC3W7mp+f0w+wHOYxO3OG+e376hsMZjk3
-AAAAAP//YmCMY2A4wMAIN5e5gQETPD6AZisDAwMDgzSDAAPjByiHcQMDAwMDg1nOze1lByRu5/47
-c4859311AYNZzg0AAAAA//9iYGDBYihOIIMuwIjGL39/fwffA8b//xv/P2BPtzzHwCBjUQAAAAD/
-/yLFBrIBAAAA//9i1HhcwdhizX7u8NZNzyLbvT97bfrMf/QHI8evOwcSqGUJAAAA//9iYBB81iSw
-pEE170Qrg5MIYydHqwdDQRMrAwcVrQAAAAD//2J4x7j9AAMDn8Q/BgYLBoaiAwwMjPdvMDBYM1Tv
-oJodAAAAAP//Yqo/83+dxePWlxl3npsel9lvLfPcqlE9725C+acfVLMEAAAA//9i+s9gwCoaaGMR
-evta/58PTEWzr21hufPjA8N+qlnBwAAAAAD//2JiWLci5v1+HmFXDqcnULE/MxgYGBj+f6CaJQAA
-AAD//2Ji2FrkY3iYpYC5qDeGgeEMAwPDvwQBBoYvcTwOVLMEAAAA//9isDBgkP///0EOg9z35v//
-Gc/eeW7BwPj5+QGZhANUswMAAAD//2JgqGBgYGBgqEMXlvhMPUsAAAAA//8iYDd1AAAAAP//AwDR
-w7IkEbzhVQAAAABJRU5ErkJggg==
-'''))))
-    return f
-
 
 class ImageDraw(object):
     def __init__(self, img, mode=None):
@@ -2094,18 +1836,57 @@ class ImageDraw(object):
         if ink is None:
             ink = fill
         if ink is not None:
-            # try:
-            #     mask, offset = font.getmask2(text, self.fontmode, *args, **kwargs)
-            #     xy = xy[0] + offset[0], xy[1] + offset[1]
-            # except AttributeError:
-            #     try:
-            #         mask = font.getmask(text, self.fontmode, *args, **kwargs)
-            #     except TypeError:
-            #         mask = font.getmask(text)
-            # self.draw.draw_bitmap(xy, mask, ink)
-            w, h = self.textsize(text, font=fontFace, scale=scale, thickness=thickness)
-            xy = (xy[0], xy[1]+h)
-            cv2.putText(self._img_instance, text, xy, fontFace, fontScale, ink, thickness)
+            if isinstance(fontFace, int):
+                w, h = self.textsize(text, font=fontFace, scale=scale, thickness=thickness)
+                xy = (xy[0], xy[1]+h)
+                cv2.putText(self._img_instance, text, xy, fontFace, fontScale, ink, thickness)
+            else:
+                # First pass to compute bbox
+                # testSize = FreeTypeFont()
+                # testSize.getsize(text, font=font)
+                ttf_font = font
+                slot = ttf_font.glyph
+                width, height, baseline = 0, 0, 0
+                previous = 0
+                for i,c in enumerate(text):
+                    ttf_font.load_char(c)
+                    bitmap = slot.bitmap
+                    height = max(height, bitmap.rows + max(0,-(slot.bitmap_top-bitmap.rows)))
+                    baseline = max(baseline, max(0,-(slot.bitmap_top-bitmap.rows)))
+                    kerning = ttf_font.get_kerning(previous, c)
+                    width += (slot.advance.x >> 6) + (kerning.x >> 6)
+                    previous = c
+                Z = np.zeros((height, width), dtype=np.ubyte)
+                # Second pass for actual rendering
+                x, y = 0, 0
+                previous = 0
+                for c in text:
+                    ttf_font.load_char(c)
+                    bitmap = slot.bitmap
+                    top = slot.bitmap_top
+                    left = slot.bitmap_left
+                    w,h = bitmap.width, bitmap.rows
+                    y = height-baseline-top
+                    kerning = ttf_font.get_kerning(previous, c)
+                    x += (kerning.x >> 6)
+                    Z[y:y+h,x:x+w] += np.array(bitmap.buffer, dtype='uint8').reshape(h,w)
+                    x += (slot.advance.x >> 6)
+                    previous = c
+                MaskImg = Image(Z)
+                img = np.zeros(self.img._instance.shape, dtype=self.img._instance.dtype)
+                if len(self.img._instance.shape)>2:
+                    if self.img._instance.shape[2] >= 2:
+                        img[:,:,0] = ink[0]
+                        img[:,:,1] = ink[1]
+                    if self.img._instance.shape[2] >= 3:
+                        img[:,:,2] = ink[2]
+                    if self.img._instance.shape[2] == 4:
+                        img[:,:,3] = 255
+                else:
+                    img[:] = ink
+                TextImg = Image(img)
+                self.img.paste(TextImg, box=xy, mask=MaskImg)
+
 
     def textsize(self, text, font=cv2.FONT_HERSHEY_SIMPLEX, spacing=4, direction=None, features=None, scale=0.4, thickness=1):
         "Get the size of a given string, in pixels."
@@ -2545,21 +2326,48 @@ def blend(img1, img2, alpha):
     dst = cv2.addWeighted(img1, 1.0-alpha, img2, alpha, 0)
     return Image(dst)
 
-def composite(background, foreground, mask):
+def composite(background, foreground, mask, np_image=False):
     "pastes the foreground image into the background image using the mask"
     # Convert uint8 to float
     foreground = foreground.astype(float)
     background = background.astype(float)
     # Normalize the alpha mask to keep intensity between 0 and 1
     alphamask = mask.astype(float)/255
+    fslen = foreground.shape
+    if alphamask.shape != fslen:
+        img = np.zeros(foreground.shape, dtype=foreground.dtype)
+        if fslen>2:
+            if foreground.shape[2] >= 2:
+                img[:,:,0] = alphamask
+                img[:,:,1] = alphamask
+            if foreground.shape[2] >= 3:
+                img[:,:,2] = alphamask
+            if foreground.shape[2] == 4:
+                img[:,:,3] = alphamask
+            alphamask = img.copy()
     # Multiply the foreground with the alpha mask
     foreground = cv2.multiply(alphamask, foreground)
     # Multiply the background with ( 1 - alpha )
+    bslen = background.shape
+    if alphamask.shape != bslen:
+        img = np.zeros(background.shape, dtype=background.dtype)
+        if bslen>2:
+            if background.shape[2] >= 2:
+                img[:,:,0] = alphamask
+                img[:,:,1] = alphamask
+            if background.shape[2] >= 3:
+                img[:,:,2] = alphamask
+            if background.shape[2] == 4:
+                img[:,:,3] = alphamask
+            alphamask = img.copy()
     background = cv2.multiply(1.0 - alphamask, background)
     # Add the masked foreground and background
     outImage = cv2.add(foreground, background)
     outImage = outImage/255
-    return Image(outImag)
+    if np_image:
+        return outImage
+    else:
+        return Image(outImage)
 
 def alpha_composite(im1, im2):
     """
@@ -2783,59 +2591,16 @@ class BuiltinFilter(MultibandFilter):
 
 class GaussianBlur(MultibandFilter):
     """Gaussian blur filter.
-
     :param radius: Blur radius.
     """
     name = "GaussianBlur"
-
     def __init__(self, radius=2):
         self.radius = radius
+        self.name = "GaussianBlur"
 
     def filter(self, image):
-        return image.gaussian_blur(self.radius)
-
-class BoxBlur(MultibandFilter):
-    """Blurs the image by setting each pixel to the average value of the pixels
-    in a square box extending radius pixels in each direction.
-    Supports float radius of arbitrary size. Uses an optimized implementation
-    which runs in linear time relative to the size of the image
-    for any radius value.
-
-    :param radius: Size of the box in one direction. Radius 0 does not blur,
-                   returns an identical image. Radius 1 takes 1 pixel
-                   in each direction, i.e. 9 pixels in total.
-    """
-    name = "BoxBlur"
-
-    def __init__(self, radius):
-        self.radius = radius
-
-    def filter(self, image):
-        return image.box_blur(self.radius)
-
-class UnsharpMask(MultibandFilter):
-    """Unsharp mask filter.
-
-    See Wikipedia's entry on `digital unsharp masking`_ for an explanation of
-    the parameters.
-
-    :param radius: Blur Radius
-    :param percent: Unsharp strength, in percent
-    :param threshold: Threshold controls the minimum brightness change that
-      will be sharpened
-
-    .. _digital unsharp masking: https://en.wikipedia.org/wiki/Unsharp_masking#Digital_unsharp_masking
-
-    """  # noqa: E501
-    name = "UnsharpMask"
-
-    def __init__(self, radius=2, percent=150, threshold=3):
-        self.radius = radius
-        self.percent = percent
-        self.threshold = threshold
-
-    def filter(self, image):
-        return image.unsharp_mask(self.radius, self.percent, self.threshold)
+        dst = cv2.GaussianBlur(image._instance, (5, 5), cv2.BORDER_DEFAULT) 
+        return Image(dst)
 
 class BLUR(BuiltinFilter):
     name = "Blur"
