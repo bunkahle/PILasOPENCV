@@ -13,5 +13,5 @@ setup(
     url='https://github.com/bunkahle/particlescv2',
     long_description=open('README.md').read(),
     platforms = ['any'],
-    install_requires=['numpy', 'opencv-python']
+    install_requires=['numpy', 'opencv-python', 'freetype-py']
 )
