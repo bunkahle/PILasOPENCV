@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 from __future__ import print_function
@@ -8,7 +9,6 @@ import numbers
 import freetype
 
 __author__ = 'imressed, bunkus'
-# Constants (also defined in _imagingmodule.c!)
 
 if sys.version[0] == "2":
     py3 = False
@@ -1368,16 +1368,40 @@ class FreeTypeFont(object):
             self.font = load(self.path, self.size+16)
         else:
             self.font = None
-    
-    def getsize(self, text, direction=None, features=None):
-        # size, offset = self.font.getsize(text, direction, features)
-        # return (size[0] + offset[0], size[1] + offset[1])
-        return None
-    
-    def getmask(self, text, mode="", direction=None, features=None):
-        # return self.getmask2(text, mode, direction=direction,
-        #                      features=features)[0]     
-        return None
+
+def getsize(text, ttf_font):
+    slot = ttf_font.glyph
+    width, height, baseline = 0, 0, 0
+    previous = 0
+    for i,c in enumerate(text):
+        ttf_font.load_char(c)
+        bitmap = slot.bitmap
+        height = max(height, bitmap.rows + max(0,-(slot.bitmap_top-bitmap.rows)))
+        baseline = max(baseline, max(0,-(slot.bitmap_top-bitmap.rows)))
+        kerning = ttf_font.get_kerning(previous, c)
+        width += (slot.advance.x >> 6) + (kerning.x >> 6)
+        previous = c
+    return width, height, baseline
+
+def getmask(text, ttf_font):
+    slot = ttf_font.glyph
+    width, height, baseline = getsize(text, ttf_font)    
+    Z = np.zeros((height, width), dtype=np.ubyte)
+    x, y = 0, 0
+    previous = 0
+    for c in text:
+        ttf_font.load_char(c)
+        bitmap = slot.bitmap
+        top = slot.bitmap_top
+        left = slot.bitmap_left
+        w,h = bitmap.width, bitmap.rows
+        y = height-baseline-top
+        kerning = ttf_font.get_kerning(previous, c)
+        x += (kerning.x >> 6)
+        Z[y:y+h,x:x+w] += np.array(bitmap.buffer, dtype='uint8').reshape(h,w)
+        x += (slot.advance.x >> 6)
+        previous = c
+    return Z
 
 def load(filename, size=12):
     """
@@ -1652,9 +1676,8 @@ class ImageDraw(object):
     def getfont(self):
         """Get the current default font.
         :returns: An image font."""
-        if not self.font:
-            import ImageFont
-            self.font = ImageFont.load_default()
+        if self.font is None:
+            self.font = cv2.FONT_HERSHEY_SIMPLEX
         return self.font
 
     def line(self, xy, fill=None, width=1, joint=None):
@@ -1738,8 +1761,8 @@ class ImageDraw(object):
                 left += (max_width - widths[idx])
             else:
                 raise ValueError('align must be "left", "center" or "right"')
-            self.text((left, top), line, fill, font, anchor,
-                      direction=direction, features=features)
+            self.text((left, top), line, fill=fill, font=font, anchor=anchor, scale=scale, thickness=thickness,
+                      calledfrommultilines=True, direction=direction, features=features)
             top += line_spacing
             left = xy[0]
 
@@ -1825,11 +1848,12 @@ class ImageDraw(object):
         if channels == 1 and depth == np.float64:
             self.ink = 0.0
 
-    def text(self, xy, text, fill=None, font=cv2.FONT_HERSHEY_SIMPLEX, anchor=None, scale=0.4, thickness=1, *args, **kwargs):
+    def text(self, xy, text, fill=None, font=cv2.FONT_HERSHEY_SIMPLEX, anchor=None, scale=0.4, thickness=1, calledfrommultilines=False, *args, **kwargs):
         fontFace = font
         fontScale = scale
-        if self._multiline_check(text):
-            return self.multiline_text(xy, text, fill, font, anchor, scale=scale, thickness=thickness, *args, **kwargs)
+        if not calledfrommultilines and isinstance(fontFace, int):
+            if self._multiline_check(text):
+                return self.multiline_text(xy, text, fill, font, anchor, scale=scale, thickness=thickness, *args, **kwargs)
         ink, fill = self._getink(fill)
         if fontFace is None:
             fontFace = self.getfont()
@@ -1841,51 +1865,32 @@ class ImageDraw(object):
                 xy = (xy[0], xy[1]+h)
                 cv2.putText(self._img_instance, text, xy, fontFace, fontScale, ink, thickness)
             else:
-                # First pass to compute bbox
-                # testSize = FreeTypeFont()
-                # testSize.getsize(text, font=font)
-                ttf_font = font
-                slot = ttf_font.glyph
-                width, height, baseline = 0, 0, 0
-                previous = 0
-                for i,c in enumerate(text):
-                    ttf_font.load_char(c)
-                    bitmap = slot.bitmap
-                    height = max(height, bitmap.rows + max(0,-(slot.bitmap_top-bitmap.rows)))
-                    baseline = max(baseline, max(0,-(slot.bitmap_top-bitmap.rows)))
-                    kerning = ttf_font.get_kerning(previous, c)
-                    width += (slot.advance.x >> 6) + (kerning.x >> 6)
-                    previous = c
-                Z = np.zeros((height, width), dtype=np.ubyte)
-                # Second pass for actual rendering
-                x, y = 0, 0
-                previous = 0
-                for c in text:
-                    ttf_font.load_char(c)
-                    bitmap = slot.bitmap
-                    top = slot.bitmap_top
-                    left = slot.bitmap_left
-                    w,h = bitmap.width, bitmap.rows
-                    y = height-baseline-top
-                    kerning = ttf_font.get_kerning(previous, c)
-                    x += (kerning.x >> 6)
-                    Z[y:y+h,x:x+w] += np.array(bitmap.buffer, dtype='uint8').reshape(h,w)
-                    x += (slot.advance.x >> 6)
-                    previous = c
-                MaskImg = Image(Z)
-                img = np.zeros(self.img._instance.shape, dtype=self.img._instance.dtype)
-                if len(self.img._instance.shape)>2:
-                    if self.img._instance.shape[2] >= 2:
-                        img[:,:,0] = ink[0]
-                        img[:,:,1] = ink[1]
-                    if self.img._instance.shape[2] >= 3:
-                        img[:,:,2] = ink[2]
-                    if self.img._instance.shape[2] == 4:
-                        img[:,:,3] = 255
+                if self._multiline_check(text):
+                    lines = text.split("\n")
                 else:
-                    img[:] = ink
-                TextImg = Image(img)
-                self.img.paste(TextImg, box=xy, mask=MaskImg)
+                    lines =[text]
+                old_height = 0
+                for line in lines:
+                    # First pass to compute bbox
+                    width, height, baseline = getsize(line, font)
+                    # Second pass for actual rendering
+                    Z = getmask(line, font)
+                    MaskImg = Image(Z)
+                    img = np.zeros(self.img._instance.shape, dtype=self.img._instance.dtype)
+                    if len(self.img._instance.shape)>2:
+                        if self.img._instance.shape[2] >= 2:
+                            img[:,:,0] = ink[0]
+                            img[:,:,1] = ink[1]
+                        if self.img._instance.shape[2] >= 3:
+                            img[:,:,2] = ink[2]
+                        if self.img._instance.shape[2] == 4:
+                            img[:,:,3] = 255
+                    else:
+                        img[:] = ink
+                    TextImg = Image(img)
+                    box = [xy[0], xy[1]+old_height]
+                    self.img.paste(TextImg, box=box, mask=MaskImg)
+                    old_height = old_height + height
 
 
     def textsize(self, text, font=cv2.FONT_HERSHEY_SIMPLEX, spacing=4, direction=None, features=None, scale=0.4, thickness=1):
@@ -1894,12 +1899,17 @@ class ImageDraw(object):
         fontScale = scale
         if self._multiline_check(text):
             return self.multiline_textsize(text, font, spacing, direction, features, scale=scale, thickness=thickness)
-        if font is None:
-            font = self.getfont()
-        size = cv2.getTextSize(text, fontFace, fontScale, thickness)
-        text_width = size[0][0]
-        text_height = size[0][1]
-        return (text_width, text_height)
+        if isinstance(fontFace, int):
+            if font is None:
+                fontFace = self.getfont()
+            size = cv2.getTextSize(text, fontFace, fontScale, thickness)
+            text_width = size[0][0]
+            text_height = size[0][1]
+            return (text_width, text_height)
+        else:
+            width, height, baseline = getsize(text, fontFace)
+            return (width, height)
+
 
 def Draw(im, mode=None):
     """
@@ -2329,6 +2339,7 @@ def blend(img1, img2, alpha):
 def composite(background, foreground, mask, np_image=False):
     "pastes the foreground image into the background image using the mask"
     # Convert uint8 to float
+    old_type = background.dtype
     foreground = foreground.astype(float)
     background = background.astype(float)
     # Normalize the alpha mask to keep intensity between 0 and 1
@@ -2364,6 +2375,8 @@ def composite(background, foreground, mask, np_image=False):
     # Add the masked foreground and background
     outImage = cv2.add(foreground, background)
     outImage = outImage/255
+    outImage = outImage*255
+    outImage = outImage.astype(old_type)
     if np_image:
         return outImage
     else:
@@ -2596,10 +2609,12 @@ class GaussianBlur(MultibandFilter):
     name = "GaussianBlur"
     def __init__(self, radius=2):
         self.radius = radius
-        self.name = "GaussianBlur"
+        self.name = "GaussianBlur"  
 
     def filter(self, image):
-        dst = cv2.GaussianBlur(image._instance, (5, 5), cv2.BORDER_DEFAULT) 
+        kernel_size = self.radius*2+1
+        sigmaX = 0.3*((kernel_size-1)*0.5 - 1) + 0.8
+        dst = cv2.GaussianBlur(image._instance, (kernel_size, kernel_size), sigmaX, borderType=cv2.BORDER_DEFAULT)
         return Image(dst)
 
 class BLUR(BuiltinFilter):
