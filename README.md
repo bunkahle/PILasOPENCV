@@ -73,8 +73,6 @@ You can export the cv2/numpy image from an Image instance with the command getim
 This is a very unstable development version. Use with care. Not much testing has been done to it though tests have been done. They can be found in the tests directory.
 
 # TO DO:
-ImageFont is not implemented fully yet.
-
 ImageMode, ImageColor, ImageDraw are, ImageFilter, ImageChops are implemented but have not been fully tested.
 Some functions/methods of these classes are missing and are not implemented though.
 If you want to import them, import them with:
