@@ -49,6 +49,6 @@ im = im0.filter(ImageFilter.SMOOTH_MORE)
 print("SMOOTH_MORE")
 im.show("test")
 
-im = im0.filter(ImageFilter.GaussianBlur)
+im = im0.filter(ImageFilter.GaussianBlur(radius=10))
 print("GaussianBlur")
 im.show("test")
