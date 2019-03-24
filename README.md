@@ -86,6 +86,8 @@ If you want to import them, import them with:
     import PILasOPENCV as ImageChops
     import PILasOPENCV as ImageFont
     
+The PIL classes ImageEnhance, ImageFile, ImageFileIO, ImageGrab, ImageMath, ImageOps, ImagePath, ImageQt, ImageSequence, ImageStat, ImageTk, ImageWin, ImageGL have not been implemented.
+    
 If you want to use the methods getsize and getmask from ImageFont you have to use them differently:
 
 	from __future__ import print_function
