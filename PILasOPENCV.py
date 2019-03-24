@@ -473,8 +473,8 @@ class Image(object):
                 'RGB':cv2.COLOR_YCR_CB2BGR
             }
         }
-        if converting_table.has_key(inst):
-            if converting_table[inst].has_key(mode):
+        if inst in converting_table:
+            if mode in converting_table[inst]:
                 return converting_table[inst][mode]
             else:
                 raise ValueError('You can not convert image to this type')
@@ -2347,8 +2347,8 @@ def composite(background, foreground, mask, np_image=False):
     background = background.astype(float)
     # Normalize the alpha mask to keep intensity between 0 and 1
     alphamask = mask.astype(float)/255
-    fslen = foreground.shape
-    if alphamask.shape != fslen:
+    fslen = len(foreground.shape)
+    if len(alphamask.shape) != fslen:
         img = np.zeros(foreground.shape, dtype=foreground.dtype)
         if fslen>2:
             if foreground.shape[2] >= 2:
@@ -2362,8 +2362,8 @@ def composite(background, foreground, mask, np_image=False):
     # Multiply the foreground with the alpha mask
     foreground = cv2.multiply(alphamask, foreground)
     # Multiply the background with ( 1 - alpha )
-    bslen = background.shape
-    if alphamask.shape != bslen:
+    bslen = len(background.shape)
+    if len(alphamask.shape) != bslen:
         img = np.zeros(background.shape, dtype=background.dtype)
         if bslen>2:
             if background.shape[2] >= 2:
