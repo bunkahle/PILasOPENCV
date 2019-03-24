@@ -1441,12 +1441,15 @@ def truetype(font=None, size=10, index=0, encoding="",
     :return: A font object.
     :exception IOError: If the file could not be read.
     """
+    fontpath = font
     try:
         font = FreeTypeFont(font, size)
         # index, encoding, layout_engine
+        if font.font is None:
+            raise IOError("cannot find font file")
         return font.font
     except:
-        ttf_filename = os.path.basename(font)
+        ttf_filename = os.path.basename(fontpath)
         dirs = []
         if sys.platform == "win32":
             # check the windows font repository
