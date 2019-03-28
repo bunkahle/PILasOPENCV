@@ -1,5 +1,5 @@
 # PILasOPENCV
-Wrapper for Image functions which are used and called in the manner of the famous PIL module but work internally with OpenCV.
+Wrapper for Image functions which are used and called in the manner of the famous PIL module but work internally with OpenCV. Since there is no truetype font support for Python in OpenCV (it exists for the OpenCV C libraries) this might module might be useful since it supports all kind of truetype fonts to be integrated in images. See below for more details on this.
 
 This library can be used to migrate old PIL projects to OPENCV.
 
@@ -69,11 +69,35 @@ You can export the cv2/numpy image from an Image instance with the command getim
     cv2.imshow("numpy_image", numpy_image)
     cv2.waitKey(0)
     
+# Usage of truetype fonts in PILasOPENCV
+PILasOPENCV supports the use of truetype fonts with Python. The python module freetype-py needs to be installed for this. To import and use truetype fonts you can do the following:
+
+	from __future__ import print_function
+	import PILasOPENCV as Image
+	import PILasOPENCV as ImageDraw
+	import PILasOPENCV as ImageFont
+	import cv2
+
+	font = ImageFont.truetype("arial.ttf", 18)
+	print(font)
+	im = Image.open("lena.jpg")
+	draw = ImageDraw.Draw(im)
+	text = "Lena's image"
+	draw.text((249,455), text, font=font, fill=(0, 0, 0))
+	print(ImageFont.getsize(text, font))
+	mask = ImageFont.getmask(text, font)
+	# in PIL this code is written differently:
+	# print(font.getsize(text))
+	# mask = font.getmask(text)
+	print(type(mask))
+	cv2.imshow("mask", mask)
+	im.show()
+    
 # Attention:
 This is a very unstable development version. Use with care. Not much testing has been done to it though tests have been done. They can be found in the tests directory.
 
 # TO DO:
-ImageMode, ImageColor, ImageDraw are, ImageFilter, ImageChops are implemented but have not been fully tested.
+The most used classes and methods like ImageMode, ImageColor, ImageDraw are, ImageFilter, ImageChops are implemented but have not been fully tested.
 Some functions/methods of these classes are missing and are not implemented though.
 If you want to import them, import them with:
 
@@ -93,7 +117,7 @@ If you want to use the methods getsize and getmask from ImageFont you have to us
 	import PILasOPENCV as ImageDraw
 	import PILasOPENCV as ImageFont
 	import cv2
-    # from PIL import Image, ImageDraw, ImageFont
+        # from PIL import Image, ImageDraw, ImageFont
     
 	font = ImageFont.truetype("ARIAL.ttf".lower(), 18)
 	im = Image.open("lena.jpg")
