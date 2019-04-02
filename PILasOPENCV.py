@@ -12,6 +12,7 @@ __author__ = 'imressed, bunkus'
 
 if sys.version[0] == "2":
     py3 = False
+    import cStringIO
 else:
     py3 = True
 if py3: 
@@ -445,6 +446,8 @@ class Image(object):
         mode = mode.upper()
         if inst is None:
             inst = self._mode.upper()
+        if mode == inst:
+            return "EQUAL"
         converting_table = {
             'L':{
                 'RGB':cv2.COLOR_GRAY2BGR,
@@ -662,6 +665,8 @@ class Image(object):
         else:
             orig_mode = self._get_mode(obj.shape, obj.dtype)
             flag = self._get_converting_flag(mode, inst=orig_mode)
+        if flag == "EQUAL":
+            return obj.copy()
         if mode == "1":
             im_gray = cv2.cvtColor(obj, cv2.COLOR_BGR2GRAY)
             thresh, converted = cv2.threshold(im_gray, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
@@ -1130,13 +1135,19 @@ class Image(object):
         if frame != 0:
             raise EOFError
 
-    def show(self, title=None, command=None):
+    def setim(self, numpy_image):
+        mode = Image()._get_mode(numpy_image.shape, numpy_image.dtype)
+        if mode != self._mode:
+            raise ValueError("Modes of mother image and child image do not match", self._mode, mode)
+        self._instance = numpy_image
+
+    def show(self, title=None, command=None, wait=0):
         "shows the image in a window"
         if title is None:
             title = ""
         if command is None:
             cv2.imshow(title, self._instance)
-            cv2.waitKey(0)
+            cv2.waitKey(wait)
         else:
             flag, fname = tempfile.mkstemp()
             cv2.imwrite(fname, self._instance)
@@ -1369,23 +1380,29 @@ class FreeTypeFont(object):
         else:
             self.font = None
 
-def getsize(text, ttf_font):
-    slot = ttf_font.glyph
-    width, height, baseline = 0, 0, 0
-    previous = 0
-    for i,c in enumerate(text):
-        ttf_font.load_char(c)
-        bitmap = slot.bitmap
-        height = max(height, bitmap.rows + max(0,-(slot.bitmap_top-bitmap.rows)))
-        baseline = max(baseline, max(0,-(slot.bitmap_top-bitmap.rows)))
-        kerning = ttf_font.get_kerning(previous, c)
-        width += (slot.advance.x >> 6) + (kerning.x >> 6)
-        previous = c
+def getsize(text, ttf_font, scale=1.0, thickness=1):
+    if isinstance(ttf_font, freetype.Face):
+        slot = ttf_font.glyph
+        width, height, baseline = 0, 0, 0
+        previous = 0
+        for i,c in enumerate(text):
+            ttf_font.load_char(c)
+            bitmap = slot.bitmap
+            height = max(height, bitmap.rows + max(0,-(slot.bitmap_top-bitmap.rows)))
+            baseline = max(baseline, max(0,-(slot.bitmap_top-bitmap.rows)))
+            kerning = ttf_font.get_kerning(previous, c)
+            width += (slot.advance.x >> 6) + (kerning.x >> 6)
+            previous = c
+    else:
+        size = cv2.getTextSize(text, ttf_font, scale, thickness)
+        width = size[0][0]
+        height = size[0][1]
+        baseline = size[1]
     return width, height, baseline
 
 def getmask(text, ttf_font):
     slot = ttf_font.glyph
-    width, height, baseline = getsize(text, ttf_font)    
+    width, height, baseline = getsize(text, ttf_font)
     Z = np.zeros((height, width), dtype=np.ubyte)
     x, y = 0, 0
     previous = 0
@@ -1398,7 +1415,17 @@ def getmask(text, ttf_font):
         y = height-baseline-top
         kerning = ttf_font.get_kerning(previous, c)
         x += (kerning.x >> 6)
-        Z[y:y+h,x:x+w] += np.array(bitmap.buffer, dtype='uint8').reshape(h,w)
+        character = np.array(bitmap.buffer, dtype='uint8').reshape(h,w)
+        # print("Z.shape", Z.shape)
+        # print(x, y, w, h, character.shape, type(bitmap))
+        try:
+            Z[y:y+h,x:x+w] += character
+        except ValueError:
+            while x+w>Z.shape[1]:
+                x = x - 1
+            # print("new", x, y, w, h, character.shape, type(bitmap))
+            if x>0:
+                Z[:character.shape[0],x:x+w] += character
         x += (slot.advance.x >> 6)
         previous = c
     return Z
@@ -1610,6 +1637,8 @@ class ImageDraw(object):
 
     def arc(self, box, start, end, fill=None, width=1, line=False, linecenter=False, fillcolor=None):
         "Draw an arc."
+        while end<start:
+            end = end + 360
         if fillcolor is not None:
             fill = fillcolor
         ink, fill = self._getink(fill)
@@ -1788,6 +1817,11 @@ class ImageDraw(object):
             self.arc(box, start, end, ink, width, linecenter=True)
             # self.draw.draw_pieslice(xy, start, end, ink, 0, width)
 
+    def _point(self, x, y, fill=None):
+        "Draw a point without transformations"
+        elem = (x, y)
+        cv2.circle(self._img_instance, elem, 1, fill, thickness=-1)
+
     def point(self, xy, fill=None, width=1):
         "Draw a point."
         ink, fill = self._getink(fill)
@@ -1795,7 +1829,7 @@ class ImageDraw(object):
         for co in range(0, len(coord), 2):
             elem = (coord[co], coord[co+1])
             # cv2.line(self._img_instance, elem, elem, ink, width)
-            cv2.circle(self._img_instance, elem, width//2, ink, thickness=-1)
+            cv2.circle(self._img_instance, elem, width, ink, thickness=-1)
 
     def polygon(self, xy, fill=None, outline=None):
         "Draw a polygon."
@@ -1854,7 +1888,7 @@ class ImageDraw(object):
     def text(self, xy, text, fill=None, font=cv2.FONT_HERSHEY_SIMPLEX, anchor=None, scale=0.4, thickness=1, calledfrommultilines=False, *args, **kwargs):
         fontFace = font
         fontScale = scale
-        if not calledfrommultilines and isinstance(fontFace, int):
+        if not calledfrommultilines and not isinstance(fontFace, freetype.Face):
             if self._multiline_check(text):
                 return self.multiline_text(xy, text, fill, font, anchor, scale=scale, thickness=thickness, *args, **kwargs)
         ink, fill = self._getink(fill)
@@ -1863,7 +1897,7 @@ class ImageDraw(object):
         if ink is None:
             ink = fill
         if ink is not None:
-            if isinstance(fontFace, int):
+            if not isinstance(fontFace, freetype.Face):
                 w, h = self.textsize(text, font=fontFace, scale=scale, thickness=thickness)
                 xy = (xy[0], xy[1]+h)
                 cv2.putText(self._img_instance, text, xy, fontFace, fontScale, ink, thickness)
@@ -1902,7 +1936,7 @@ class ImageDraw(object):
         fontScale = scale
         if self._multiline_check(text):
             return self.multiline_textsize(text, font, spacing, direction, features, scale=scale, thickness=thickness)
-        if isinstance(fontFace, int):
+        if not isinstance(fontFace, freetype.Face):
             if font is None:
                 fontFace = self.getfont()
             size = cv2.getTextSize(text, fontFace, fontScale, thickness)
@@ -1930,6 +1964,31 @@ def Draw(im, mode=None):
     # except AttributeError:
     #     return ImageDraw(im, mode)
     return ImageDraw(im)
+
+def floodfill(image, xy, value, border=None, thresh=0, flags=130820):
+    """
+    (experimental) Fills a bounded region with a given color.
+
+    :param image: Target image.
+    :param xy: Seed position (a 2-item coordinate tuple). See
+        :ref:`coordinate-system`.
+    :param value: Fill color.
+    :param border: Optional border value.  If given, the region consists of
+        pixels with a color different from the border color.  If not given,
+        the region consists of pixels having the same color as the seed
+        pixel.
+    :param thresh: Optional threshold value which specifies a maximum
+        tolerable difference of a pixel value from the 'background' in
+        order for it to be replaced. Useful for filling regions of
+        non-homogeneous, but similar, colors.
+    """
+    _img_instance = image.getim()
+    value = value[::-1]
+    h, w = _img_instance.shape[:2]
+    mask = np.zeros((h+2, w+2), np.uint8)
+    mask[:] = 0
+    lo = hi = thresh
+    cv2.floodFill(_img_instance, mask, xy, value, (lo,)*3, (hi,)*3, flags)
 
 class ImageColor(object):
 
@@ -2324,7 +2383,7 @@ def open(fl, mode='r'):
     if isinstance(fl, cStringIO.InputType):
         fl.seek(0)
         img_array = np.asarray(bytearray(fl.read()), dtype=np.uint8)
-        return cv2.imdecode(img_array, 1)
+        return Image(cv2.imdecode(img_array, 1))
     if hasattr(fl, 'mode'):
         image = np.array(fl)
         _mode = fl.mode
@@ -2342,11 +2401,18 @@ def blend(img1, img2, alpha):
 def composite(background, foreground, mask, np_image=False):
     "pastes the foreground image into the background image using the mask"
     # Convert uint8 to float
-    old_type = background.dtype
-    foreground = foreground.astype(float)
-    background = background.astype(float)
-    # Normalize the alpha mask to keep intensity between 0 and 1
-    alphamask = mask.astype(float)/255
+    if isinstance(background, np.ndarray):
+        foreground = foreground.astype(float)
+        old_type = background.dtype
+        background = background.astype(float)
+        # Normalize the alpha mask to keep intensity between 0 and 1
+        alphamask = (~mask).astype(float)/255
+    else:
+        foreground = foreground._instance.astype(float)
+        old_type = background.dtype
+        background = background._instance.astype(float)
+        # Normalize the alpha mask to keep intensity between 0 and 1
+        alphamask = (~(mask._instance)).astype(float)/255
     fslen = len(foreground.shape)
     if len(alphamask.shape) != fslen:
         img = np.zeros(foreground.shape, dtype=foreground.dtype)
@@ -2441,26 +2507,29 @@ def linear_gradient(mode, size=256):
         gradient = gradient.astype(depth)
         return gradient
 
-def radial_gradient(mode, size=256):
+def radial_gradient(mode, size=256, innerColor=(0, 0, 0), outerColor=(255, 255, 255)):
     "Generate 256x256 radial gradient from black to white, centre to edge."
     channels, depth = Image()._get_channels_and_depth(mode)
     gradient = np.zeros((size, size, channels), dtype=depth)
-    imgsize = gradient.shape[:2]
-    innerColor = (0, 0, 0)
-    outerColor = (255, 255, 255)
     if channels == 1:
-        x_axis = np.linspace(-1, 1, 256)[:, None]
-        y_axis = np.linspace(-1, 1, 256)[None, :]
+        _max_value = 1
+        x_axis = np.linspace(-_max_value, _max_value, size)[:, None]
+        y_axis = np.linspace(-_max_value, _max_value, size)[None, :]
         gradient = np.sqrt(x_axis ** 2 + y_axis ** 2)
+        if innerColor == 255 or innerColor == (255, 255, 255):
+            gradient = _max_value-gradient
         return gradient
     elif channels ==3:
         inner = np.array([0, 0, 0])[None, None, :]
         outer = np.array([1, 1, 1])[None, None, :]
-        gradient /= gradient.max()
+        if gradient.max() != 0:
+            gradient /= gradient.max()
         gradient = gradient[:, :, None]
         gradient = gradient * outer + (1 - gradient) * inner
+        # gradient = gradient/255.0*255
         return gradient
     else:
+        imgsize = gradient.shape[:2]
         for y in range(imgsize[1]):
             for x in range(imgsize[0]):
                 #Find the distance to the center
@@ -2713,8 +2782,7 @@ if __name__ == '__main__':
             import urllib2, cStringIO
             imgdata = urllib2.urlopen(url_loc).read()
             img = open(cStringIO.StringIO(imgdata))
-            temp = Image(img, format="RGB")
-            temp.save(testfile)
+            img.save(testfile)
     outfile1 = "lena1.bmp"
     outfile2 = "lena2.bmp"
     thsize = (128, 128)
@@ -2748,8 +2816,16 @@ if __name__ == '__main__':
     # im = Image.open(testfile)
     im = open(testfile)
     print(im.format, im.size, im.mode)
+    font_success = True
+    try:
+        font = truetype("arial.ttf", 28)
+    except:
+        font_success = False
+    draw = Draw(im)
+    text = "Lena's\nimage"
+    draw.text((249,435), text, font=font, fill=(0, 0, 0))    
     # JPEG (512, 512) RGB
-    im.save(outfile2)
+    # im.save(outfile2)
     im.show()
     small = im.copy()
     small.thumbnail(thsize)
