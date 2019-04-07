@@ -1928,7 +1928,6 @@ class ImageDraw(object):
                     TextImg = Image(img)
                     box = [xy[0], xy[1]+old_height]
                     self.img.paste(TextImg, box=box, mask=MaskImg)
-                    self.img.show("self.img")
                     old_height = old_height + height
 
 
