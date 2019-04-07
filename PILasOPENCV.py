@@ -717,9 +717,9 @@ class Image(object):
             
             if _mask.shape[:2] != new_canvas.shape[:2]:
                 _new_mask = np.zeros(self._instance.shape[:2], dtype=self._instance.dtype)
-                _new_mask = self._paste(_new_mask, _mask, box[0], box[1])
+                _new_mask = ~(self._paste(_new_mask, _mask, box[0], box[1]))
             else:
-                _new_mask = _mask
+                _new_mask = ~_mask
             self._instance = composite(self._instance, new_canvas, _new_mask, np_image=True)
 
     def _paste(self, mother, child, x, y):
@@ -1413,11 +1413,10 @@ def getmask(text, ttf_font):
         left = slot.bitmap_left
         w,h = bitmap.width, bitmap.rows
         y = height-baseline-top
+        if y<=0: y=0
         kerning = ttf_font.get_kerning(previous, c)
         x += (kerning.x >> 6)
         character = np.array(bitmap.buffer, dtype='uint8').reshape(h,w)
-        # print("Z.shape", Z.shape)
-        # print(x, y, w, h, character.shape, type(bitmap))
         try:
             Z[y:y+h,x:x+w] += character
         except ValueError:
@@ -1541,7 +1540,7 @@ class ImageDraw(object):
     def __init__(self, img, mode=None):
         try:
             self.img = img
-            self._img_instance = img._instance
+            self._img_instance = self.img._instance
             self.mode = Image()._get_mode(self._img_instance.shape, self._img_instance.dtype)
             self.setink()
         except AttributeError:
@@ -1912,6 +1911,8 @@ class ImageDraw(object):
                     width, height, baseline = getsize(line, font)
                     # Second pass for actual rendering
                     Z = getmask(line, font)
+                    # cv2.imshow("Z", Z)
+                    # cv2.waitKey()
                     MaskImg = Image(Z)
                     img = np.zeros(self.img._instance.shape, dtype=self.img._instance.dtype)
                     if len(self.img._instance.shape)>2:
@@ -1927,6 +1928,7 @@ class ImageDraw(object):
                     TextImg = Image(img)
                     box = [xy[0], xy[1]+old_height]
                     self.img.paste(TextImg, box=box, mask=MaskImg)
+                    self.img.show("self.img")
                     old_height = old_height + height
 
 
@@ -2398,7 +2400,7 @@ def blend(img1, img2, alpha):
     dst = cv2.addWeighted(img1, 1.0-alpha, img2, alpha, 0)
     return Image(dst)
 
-def composite(background, foreground, mask, np_image=False):
+def composite(background, foreground, mask, np_image=False, neg_mask=False):
     "pastes the foreground image into the background image using the mask"
     # Convert uint8 to float
     if isinstance(background, np.ndarray):
@@ -2406,13 +2408,19 @@ def composite(background, foreground, mask, np_image=False):
         old_type = background.dtype
         background = background.astype(float)
         # Normalize the alpha mask to keep intensity between 0 and 1
-        alphamask = (~mask).astype(float)/255
+        if neg_mask:
+            alphamask = mask.astype(float)/255
+        else:
+            alphamask = (~mask).astype(float)/255
     else:
         foreground = foreground._instance.astype(float)
         old_type = background.dtype
         background = background._instance.astype(float)
         # Normalize the alpha mask to keep intensity between 0 and 1
-        alphamask = (~(mask._instance)).astype(float)/255
+        if neg_mask:
+            alphamask = mask._instance.astype(float)/255
+        else:
+            alphamask = (~(mask._instance)).astype(float)/255
     fslen = len(foreground.shape)
     if len(alphamask.shape) != fslen:
         img = np.zeros(foreground.shape, dtype=foreground.dtype)
