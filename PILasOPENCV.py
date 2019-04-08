@@ -2245,7 +2245,7 @@ def frombytes(mode, size, data, decoder_name="raw", *args):
         args = mode
 
     im = new(mode, size)
-    im.frombytes(data, decoder_name, args)
+    im.frombytes(mode, size, data, decoder_name, args)
     return im
 
 def fromstring(mode, size, data, decoder_name="raw", *args):
