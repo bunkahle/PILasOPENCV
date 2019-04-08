@@ -860,7 +860,7 @@ class Image(object):
         return colors
 
     def getdata(self):
-        flattened = self._instance.reshape((x*y, 3))
+        flattened = self._instance.reshape((self.size[0]*self.size[1], 3))
         return flattened
 
     def getextrema(self):
