@@ -623,25 +623,29 @@ class Image(object):
         This method is similar to the :py:func:`~PIL.Image.frombytes` function,
         but loads data into this image instead of creating a new image object.
         """
-
         # may pass tuple instead of argument list
         if len(args) == 1 and isinstance(args[0], tuple):
             args = args[0]
-
         # default format
         if decoder_name == "raw" and args == ():
             args = self.mode
 
         # unpack data
         channels, depth = self._get_channels_and_depth(mode)
-        try:
-            self._instance = np.fromstring(data, dtype=depth)
-        except:
-            raise ValueError("cannot decode image data")
+        self._instance = np.fromstring(data, dtype=depth)
         try:
             self._instance = self._instance.reshape((size[1], size[0], channels))
         except:
             raise ValueError("not enough image data")
+        try:
+            self._instance = self._instance.astype(depth)
+            if channels == 3:
+                self._instance = cv2.cvtColor(self._instance, cv2.COLOR_BGR2RGB)
+            elif channels == 4:
+                self._instance = cv2.cvtColor(self._instance, cv2.COLOR_BGRA2RGBA)
+        except:
+            raise ValueError("cannot decode image data")
+        
 
     def fromstring(self, mode, size, data, decoder_name="raw", *args):
         # raise NotImplementedError("fromstring() has been removed. "
@@ -1472,7 +1476,7 @@ def truetype(font=None, size=10, index=0, encoding="",
     :exception IOError: If the file could not be read.
     """
     if not freetype_installed:
-        raise NotImplementedError("freetype-py is not installed or the libfreetype.dll is missing")
+        raise NotImplementedError("freetype-py is not installed or the libfreetype.dll/dylib/so is missing")
     fontpath = font
     try:
         font = FreeTypeFont(font, size)
@@ -2242,7 +2246,7 @@ def frombytes(mode, size, data, decoder_name="raw", *args):
     """
 
     _check_size(size)
-
+    
     # may pass tuple instead of argument list
     if len(args) == 1 and isinstance(args[0], tuple):
         args = args[0]
@@ -2251,7 +2255,7 @@ def frombytes(mode, size, data, decoder_name="raw", *args):
         args = mode
 
     im = new(mode, size)
-    im.frombytes(data, decoder_name, args)
+    im.frombytes(mode, size, data, decoder_name, args)
     return im
 
 def fromstring(mode, size, data, decoder_name="raw", *args):
