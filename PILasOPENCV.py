@@ -867,8 +867,9 @@ class Image(object):
             colors.append((counts[l], l))
         return colors
 
-    def getdata(self):
-        flattened = self._instance.reshape((x*y, 3))
+    def getdata(self, band=None):
+        channels, depth = self._get_channels_and_depth(self._mode)
+        flattened = self._instance.reshape((self.size[0]*self.size[1], channels))
         return flattened
 
     def getextrema(self):
@@ -968,7 +969,7 @@ class Image(object):
                 colorband = (self._instance, a)
             self._instance = merge("LA", colorband, image=True)
 
-    def putdata(self, data, scale=1.0, offset=0.0):
+    def putdata(self, dat, scale=1.0, offset=0.0):
         """
         Copies pixel data to this image.  This method copies data from a
         sequence object into the image, starting at the upper left
@@ -980,13 +981,15 @@ class Image(object):
         :param scale: An optional scale value.  The default is 1.0.
         :param offset: An optional offset value.  The default is 0.0.
         """
+        data = np.array(dat)
         data = data * scale + offset
         channels, depth = self._get_channels_and_depth(self._mode)
         siz = self.size
         _im = np.ravel(self._instance)
         data = data[:len(_im)]
         _im = _im[:len(data)] = data
-        self._instance = _im.reshape((siz[1], size[0], channels), dtype=depth)
+        self._instance = _im.reshape((siz[1], siz[0], channels))
+        self._instance = self._instance.astype(depth)
 
     def putpalette(self, data, rawmode="RGB"):
         raise NotImplementedError("putpalette() has been not implemented in this library. ")
