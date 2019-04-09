@@ -35,11 +35,11 @@ Sample script:
     import PILasOPENCV as Image
     # was: from PIL import Image
     
-    im = new("RGB", (512, 512), "white")
+    im = Image.new("RGB", (512, 512), "white")
     im.show()
     
     testfile = "lena.jpg"
-    im = open(testfile)
+    im = Image.open(testfile)
     print (type(im))
     # JPEG (512, 512) RGB
     im.save("lena.bmp")
@@ -77,6 +77,7 @@ PILasOPENCV supports the use of truetype fonts with Python. The python module fr
 	import PILasOPENCV as ImageDraw
 	import PILasOPENCV as ImageFont
 	import cv2
+	# was: from PIL import Image, ImageDraw, ImageFont
 
 	font = ImageFont.truetype("arial.ttf", 18)
 	print(font)
@@ -94,7 +95,7 @@ PILasOPENCV supports the use of truetype fonts with Python. The python module fr
 	im.show()
     
 # Attention:
-This is a very unstable development version. Use with care. Not much testing has been done to it though tests have been done. They can be found in the tests directory.
+This is a very unstable development version. Use with care. Not much testing has been done to it though tests have been done which can be found in the tests directory.
 
 # TO DO:
 The most used classes and methods like ImageMode, ImageColor, ImageDraw are, ImageFilter, ImageChops are implemented but have not been fully tested.
