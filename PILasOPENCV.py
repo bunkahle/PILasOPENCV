@@ -6,7 +6,11 @@ import numpy as np
 import cv2
 import re, os, sys, tempfile
 import numbers
-import freetype
+try:
+    import freetype
+    freetype_installed = True
+except:
+    freetype_installed = False
 
 __author__ = 'imressed, bunkus'
 
@@ -1467,6 +1471,8 @@ def truetype(font=None, size=10, index=0, encoding="",
     :return: A font object.
     :exception IOError: If the file could not be read.
     """
+    if not freetype_installed:
+        raise NotImplementedError("freetype-py is not installed or the libfreetype.dll is missing")
     fontpath = font
     try:
         font = FreeTypeFont(font, size)
