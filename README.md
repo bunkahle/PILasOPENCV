@@ -142,6 +142,11 @@ You need to have numpy, opencv and freetype installed to run the module.
 Install it with 
 
      pip install numpy opencv-python freetype-py
-     
+
+# Version history:
+
+1.7: fixed fromarray
+1.6: fixed frombytes, getdata, putdata and caught exception in case freetype-py is not installed or dll is missing 
+
 # Licence
 MIT
