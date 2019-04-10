@@ -17,10 +17,6 @@ and then you change the import command at the beginning of your project files fr
     
 or 
 
-    import PIL.Image
-    
-or 
-
     import PIL.Image as Image
     
 to
