@@ -2,7 +2,6 @@ import PILasOPENCV as Image
 # from PIL import Image
 
 def create_default_image(image_width, image_height, do_gradient=True):
-    "Create a place-holder PIL image to use until we have a live feed from Cozmo"
     image_bytes = bytearray([0x70, 0x70, 0x70]) * image_width * image_height
     if do_gradient:
         i = 0
