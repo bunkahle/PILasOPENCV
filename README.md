@@ -114,7 +114,7 @@ If you want to use the methods getsize and getmask from ImageFont you have to us
 	import PILasOPENCV as ImageDraw
 	import PILasOPENCV as ImageFont
 	import cv2
-        # from PIL import Image, ImageDraw, ImageFont
+	# from PIL import Image, ImageDraw, ImageFont
     
 	font = ImageFont.truetype("ARIAL.ttf".lower(), 18)
 	im = Image.open("lena.jpg")
