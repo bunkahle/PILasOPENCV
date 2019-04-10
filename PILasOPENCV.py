@@ -1378,14 +1378,11 @@ class FreeTypeFont(object):
     "FreeType font wrapper (requires python library freetype-py)"
     def __init__(self, font=None, size=10, index=0, encoding="",
                  layout_engine=None):
-        # FIXME: use service provider instead
-
         self.path = font
         self.size = size
         self.index = index
         self.encoding = encoding
         self.layout_engine = layout_engine
-
         if os.path.isfile(self.path):
             self.font = load(self.path, self.size+16)
         else:
@@ -1481,13 +1478,10 @@ def truetype(font=None, size=10, index=0, encoding="",
     if not freetype_installed:
         raise NotImplementedError("freetype-py is not installed or the libfreetype.dll/dylib/so is missing")
     fontpath = font
-    try:
-        font = FreeTypeFont(font, size)
-        # index, encoding, layout_engine
-        if font.font is None:
-            raise IOError("cannot find font file")
+    font = FreeTypeFont(font, size)
+    if font.font is not None:
         return font.font
-    except:
+    else:
         ttf_filename = os.path.basename(fontpath)
         dirs = []
         if sys.platform == "win32":
@@ -1496,7 +1490,7 @@ def truetype(font=None, size=10, index=0, encoding="",
             # 1.5.2's os.environ.get()
             windir = os.environ.get("WINDIR")
             if windir:
-                dirs.append(os.path.join(windir, "fonts"))
+                dirs.append(os.path.join(windir, "Fonts"))
         elif sys.platform in ('linux', 'linux2'):
             lindirs = os.environ.get("XDG_DATA_DIRS", "")
             if not lindirs:
@@ -1508,7 +1502,6 @@ def truetype(font=None, size=10, index=0, encoding="",
         elif sys.platform == 'darwin':
             dirs += ['/Library/Fonts', '/System/Library/Fonts',
                      os.path.expanduser('~/Library/Fonts')]
-
         ext = os.path.splitext(ttf_filename)[1]
         first_font_with_a_different_extension = None
         for directory in dirs:
@@ -1524,7 +1517,7 @@ def truetype(font=None, size=10, index=0, encoding="",
                         if os.path.splitext(fontpath)[1] == '.ttf':
                             font = FreeTypeFont(fontpath, size)
                             return font.font
-        raise
+        raise IOError("cannot find font file")
 
 
 def load_path(filename, size=12):
@@ -2348,8 +2341,13 @@ def fromarray(obj, mode=None):
 
     .. versionadded:: 1.1.6
     """
-    if isinstance(obj, np.ndarray): 
-        return obj.copy()
+    if isinstance(obj, np.ndarray):
+        _mode = Image()._get_mode(obj.shape, obj.dtype)
+        if _mode == 'RGB':
+            obj = cv2.cvtColor(obj, cv2.COLOR_RGB2BGR)
+        elif mode == "RGBA":
+            obj = cv2.cvtColor(obj, cv2.COLOR_RGBA2BGRA)
+        return Image(obj)
     else: 
         raise TypeError("Cannot handle this data type")
 
