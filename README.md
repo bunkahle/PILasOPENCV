@@ -23,7 +23,7 @@ to
 
     import PILasOPENCV as Image
     
-Internally no PIL or Pillow library is used anymore but the opencv module for doing all the graphical work.
+Internally no PIL or Pillow library is used anymore but the opencv and numpy module for doing all the graphical work.
 
 Sample script:
 
