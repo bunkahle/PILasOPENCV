@@ -54,7 +54,7 @@ Sample script:
     im.show()
      
 # Export and import CV2/Numpy images
-You can export the cv2/numpy image from an Image instance with the command getim():
+You can export and import cv2/numpy images from and to an Image instance with the commands getim() and setim():
     
     from __future__ import print_function
     import PILasOPENCV as Image
