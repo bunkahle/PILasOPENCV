@@ -2942,8 +2942,9 @@ if __name__ == '__main__':
     except:
         font_success = False
     draw = Draw(im)
-    text = "Lena's\nimage"
-    draw.text((249,435), text, font=font, fill=(0, 0, 0))    
+    if font_success:
+        text = "Lena's\nimage"
+        draw.text((249,435), text, font=font, fill=(0, 0, 0))    
     # JPEG (512, 512) RGB
     # im.save(outfile2)
     im.show()
