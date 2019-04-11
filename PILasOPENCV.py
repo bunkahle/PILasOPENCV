@@ -6,6 +6,11 @@ import numpy as np
 import cv2
 import re, os, sys, tempfile
 import numbers
+import mss
+import mss.tools
+import ctypes
+from ctypes.wintypes import WORD, DWORD, LONG
+
 try:
     import freetype
     freetype_installed = True
@@ -13,16 +18,22 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
+VERSION = "1.8"
+
+"""
+Version history:
+1.8 ImageGrab.grab() and ImageGrab.grabclipboard() implemented with dependency on mss
+1.7 fixed fromarray
+1.6 fixed frombytes, getdata, putdata and caught exception in case freetype-py is not installed or dll is missing
+"""
 
 if sys.version[0] == "2":
     py3 = False
+    basstring = basestring
     import cStringIO
 else:
     py3 = True
-if py3: 
     basstring = str
-else:
-    basstring = basestring
 
 NONE = 0
 MAX_IMAGE_PIXELS = int(1024 * 1024 * 1024 // 4 // 3)
@@ -166,6 +177,35 @@ MODES = sorted(_MODEINFO)
 # raw modes that may be memory mapped.  NOTE: if you change this, you
 # may have to modify the stride calculation in map.c too!
 _MAPMODES = ("L", "P", "RGBX", "RGBA", "CMYK", "I;16", "I;16L", "I;16B")
+
+class BITMAPFILEHEADER(ctypes.Structure):
+    _pack_ = 1  # structure field byte alignment
+    _fields_ = [
+        ('bfType', WORD),  # file type ("BM")
+        ('bfSize', DWORD),  # file size in bytes
+        ('bfReserved1', WORD),  # must be zero
+        ('bfReserved2', WORD),  # must be zero
+        ('bfOffBits', DWORD),  # byte offset to the pixel array
+    ]
+SIZEOF_BITMAPFILEHEADER = ctypes.sizeof(BITMAPFILEHEADER)
+
+class BITMAPINFOHEADER(ctypes.Structure):
+    _pack_ = 1  # structure field byte alignment
+    _fields_ = [
+        ('biSize', DWORD),
+        ('biWidth', LONG),
+        ('biHeight', LONG),
+        ('biPLanes', WORD),
+        ('biBitCount', WORD),
+        ('biCompression', DWORD),
+        ('biSizeImage', DWORD),
+        ('biXPelsPerMeter', LONG),
+        ('biYPelsPerMeter', LONG),
+        ('biClrUsed', DWORD),
+        ('biClrImportant', DWORD)
+    ]
+SIZEOF_BITMAPINFOHEADER = ctypes.sizeof(BITMAPINFOHEADER)
+
 
 def getmodebase(mode):
     """
@@ -1436,6 +1476,68 @@ def getmask(text, ttf_font):
         x += (slot.advance.x >> 6)
         previous = c
     return Z
+
+def grab(bbox=None):
+    fh, filepath = tempfile.mkstemp('.png')
+    with mss.mss() as sct:
+        # The screen part to capture
+        if bbox is None:
+            filepath = sct.shot(mon=-1, output=filepath)
+        else:
+            monitor = {"top": bbox[1], "left": bbox[0], "width": bbox[2]-bbox[0], "height": bbox[3]-bbox[1]}
+            # Grab the data
+            sct_img = sct.grab(monitor)
+            # Save to the picture file
+            mss.tools.to_png(sct_img.rgb, sct_img.size, output=filepath)
+    return open(filepath)
+    
+def grabclipboard():
+    if sys.platform == "darwin":
+        fh, filepath = tempfile.mkstemp('.jpg')
+        os.close(fh)
+        commands = [
+            "set theFile to (open for access POSIX file \""
+            + filepath + "\" with write permission)",
+            "try",
+            "    write (the clipboard as JPEG picture) to theFile",
+            "end try",
+            "close access theFile"
+        ]
+        script = ["osascript"]
+        for command in commands:
+            script += ["-e", command]
+        subprocess.call(script)
+
+        im = None
+        if os.stat(filepath).st_size != 0:
+            im = open(filepath)
+        os.unlink(filepath)
+        return im
+    else:
+        fh, filepath = tempfile.mkstemp('.bmp')
+        import win32clipboard, builtins
+        win32clipboard.OpenClipboard()
+        try:
+            if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
+                data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
+            else:
+                data = None
+        finally:
+            win32clipboard.CloseClipboard()
+        if data is None: return None
+
+        bmih = BITMAPINFOHEADER()
+        ctypes.memmove(ctypes.pointer(bmih), data, SIZEOF_BITMAPINFOHEADER)
+        bmfh = BITMAPFILEHEADER()
+        ctypes.memset(ctypes.pointer(bmfh), 0, SIZEOF_BITMAPFILEHEADER)  # zero structure
+        bmfh.bfType = ord('B') | (ord('M') << 8)
+        bmfh.bfSize = SIZEOF_BITMAPFILEHEADER + len(data)  # file size
+        SIZEOF_COLORTABLE = 0
+        bmfh.bfOffBits = SIZEOF_BITMAPFILEHEADER + SIZEOF_BITMAPINFOHEADER + SIZEOF_COLORTABLE
+        with builtins.open(filepath, 'wb') as bmp_file:
+            bmp_file.write(bmfh)
+            bmp_file.write(data)
+        return open(filepath)
 
 def load(filename, size=12):
     """

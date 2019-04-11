@@ -3,7 +3,7 @@ from distutils.core import setup
 
 setup(
     name='PILasOPENCV',
-    version='1.7',
+    version='1.8',
     author='Andreas Bunkahle',
     author_email='abunkahle@t-online.de',
     description='Wrapper for Image functions which are used and called in the manner of the famous PIL/Pillow module but work internally with OpenCV.',
@@ -13,7 +13,7 @@ setup(
     url='https://github.com/bunkahle/PILasOPENCV',
     long_description=open('README.txt').read(),
     platforms = ['any'],
-    install_requires=['numpy', 'opencv-python', 'freetype-py'],
+    install_requires=['numpy', 'opencv-python', 'freetype-py', 'mss'],
     keywords = 'PIL OPENCV wrapper',
     classifiers=[
     # How mature is this project? Common values are
