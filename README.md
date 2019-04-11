@@ -94,8 +94,8 @@ PILasOPENCV supports the use of truetype fonts with Python. The python module fr
 This is a very unstable development version. Use with care. Not much testing has been done to it though tests have been done which can be found in the tests directory.
 
 # TO DO:
-The most used classes and methods like ImageMode, ImageColor, ImageDraw are, ImageFilter, ImageChops are implemented but have not been fully tested.
-Some functions/methods of these classes are missing and are not implemented though.
+The most used classes and methods like ImageMode, ImageColor, ImageChops are implemented but have not been fully tested. Image, ImageFont, ImageDraw, ImageGrab and ImageFilter have been tested with several testcases.
+Some functions/methods of these classes are missing and are not implemented though. 
 If you want to import them, import them with:
 
     import PILasOPENCV as ImageMode
@@ -135,7 +135,7 @@ If you want to fork this project, feel free to do so. Give me a message in case 
 abunkahle@t-online.de
 
 # Dependencies:
-You need to have numpy, opencv and freetype installed to run the module.
+You need to have numpy, opencv freetype and mss installed to run the module completely.
 Install it with 
 
      pip install numpy opencv-python freetype-py mss
