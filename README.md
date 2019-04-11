@@ -104,8 +104,9 @@ If you want to import them, import them with:
     import PILasOPENCV as ImageFilter
     import PILasOPENCV as ImageChops
     import PILasOPENCV as ImageFont
+    import PILasOPENCV as ImageGrab
     
-The PIL classes ImageEnhance, ImageFile, ImageFileIO, ImageGrab, ImageMath, ImageOps, ImagePath, ImageQt, ImageSequence, ImageStat, ImageTk, ImageWin, ImageGL have not been implemented.
+The PIL classes ImageEnhance, ImageFile, ImageFileIO, ImageMath, ImageOps, ImagePath, ImageQt, ImageSequence, ImageStat, ImageTk, ImageWin, ImageGL have not been implemented.
     
 If you want to use the methods getsize and getmask from ImageFont you have to use them differently:
 
@@ -137,9 +138,11 @@ abunkahle@t-online.de
 You need to have numpy, opencv and freetype installed to run the module.
 Install it with 
 
-     pip install numpy opencv-python freetype-py
+     pip install numpy opencv-python freetype-py mss
 
 # Version history:
+
+1.8: ImageGrab.grab() and ImageGrab.grabclipboard() implemented with dependency on mss
 
 1.7: fixed fromarray
 
