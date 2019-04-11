@@ -53,7 +53,7 @@ Sample script:
     im.paste(region, box)
     im.show()
      
-# Export CV2/Numpy images
+# Export and import CV2/Numpy images
 You can export the cv2/numpy image from an Image instance with the command getim():
     
     from __future__ import print_function
@@ -64,6 +64,10 @@ You can export the cv2/numpy image from an Image instance with the command getim
     print(type(numpy_image), numpy_image.shape)
     cv2.imshow("numpy_image", numpy_image)
     cv2.waitKey(0)
+    # import numpy image
+    new_im = Image.new("RGB", (512, 512), "black")
+    new_im.setim(numpy_image)
+    new_im.show()
     
 # Usage of truetype fonts in PILasOPENCV
 PILasOPENCV supports the use of truetype fonts with Python. The python module freetype-py needs to be installed for this. To import and use truetype fonts you can do the following:
