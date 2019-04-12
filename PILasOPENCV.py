@@ -22,6 +22,7 @@ VERSION = "1.9"
 
 """
 Version history:
+1.9: disabled ImageGrab.grabclipboard() which throws exceptions on some platforms
 1.8 ImageGrab.grab() and ImageGrab.grabclipboard() implemented with dependency on mss
 1.7 fixed fromarray
 1.6 fixed frombytes, getdata, putdata and caught exception in case freetype-py is not installed or dll is missing
