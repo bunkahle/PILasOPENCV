@@ -146,6 +146,8 @@ Install it with
 
 # Version history:
 
+1.9: disabled ImageGrab.grabclipboard() which throw exceptions on some platforms
+
 1.8: ImageGrab.grab() and ImageGrab.grabclipboard() implemented with dependency on mss
 
 1.7: fixed fromarray
