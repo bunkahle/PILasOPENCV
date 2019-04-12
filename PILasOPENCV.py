@@ -178,33 +178,37 @@ MODES = sorted(_MODEINFO)
 # may have to modify the stride calculation in map.c too!
 _MAPMODES = ("L", "P", "RGBX", "RGBA", "CMYK", "I;16", "I;16L", "I;16B")
 
-class BITMAPFILEHEADER(ctypes.Structure):
-    _pack_ = 1  # structure field byte alignment
-    _fields_ = [
-        ('bfType', WORD),  # file type ("BM")
-        ('bfSize', DWORD),  # file size in bytes
-        ('bfReserved1', WORD),  # must be zero
-        ('bfReserved2', WORD),  # must be zero
-        ('bfOffBits', DWORD),  # byte offset to the pixel array
-    ]
-SIZEOF_BITMAPFILEHEADER = ctypes.sizeof(BITMAPFILEHEADER)
+try:
+    class BITMAPFILEHEADER(ctypes.Structure):
+        _pack_ = 1  # structure field byte alignment
+        _fields_ = [
+            ('bfType', WORD),  # file type ("BM")
+            ('bfSize', DWORD),  # file size in bytes
+            ('bfReserved1', WORD),  # must be zero
+            ('bfReserved2', WORD),  # must be zero
+            ('bfOffBits', DWORD),  # byte offset to the pixel array
+        ]
+    SIZEOF_BITMAPFILEHEADER = ctypes.sizeof(BITMAPFILEHEADER)
 
-class BITMAPINFOHEADER(ctypes.Structure):
-    _pack_ = 1  # structure field byte alignment
-    _fields_ = [
-        ('biSize', DWORD),
-        ('biWidth', LONG),
-        ('biHeight', LONG),
-        ('biPLanes', WORD),
-        ('biBitCount', WORD),
-        ('biCompression', DWORD),
-        ('biSizeImage', DWORD),
-        ('biXPelsPerMeter', LONG),
-        ('biYPelsPerMeter', LONG),
-        ('biClrUsed', DWORD),
-        ('biClrImportant', DWORD)
-    ]
-SIZEOF_BITMAPINFOHEADER = ctypes.sizeof(BITMAPINFOHEADER)
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _pack_ = 1  # structure field byte alignment
+        _fields_ = [
+            ('biSize', DWORD),
+            ('biWidth', LONG),
+            ('biHeight', LONG),
+            ('biPLanes', WORD),
+            ('biBitCount', WORD),
+            ('biCompression', DWORD),
+            ('biSizeImage', DWORD),
+            ('biXPelsPerMeter', LONG),
+            ('biYPelsPerMeter', LONG),
+            ('biClrUsed', DWORD),
+            ('biClrImportant', DWORD)
+        ]
+    SIZEOF_BITMAPINFOHEADER = ctypes.sizeof(BITMAPINFOHEADER)
+    bitmap_classes_ok = True
+except:
+    bitmap_classes_ok = False
 
 
 def getmodebase(mode):
@@ -1492,52 +1496,55 @@ def grab(bbox=None):
     return open(filepath)
     
 def grabclipboard():
-    if sys.platform == "darwin":
-        fh, filepath = tempfile.mkstemp('.jpg')
-        os.close(fh)
-        commands = [
-            "set theFile to (open for access POSIX file \""
-            + filepath + "\" with write permission)",
-            "try",
-            "    write (the clipboard as JPEG picture) to theFile",
-            "end try",
-            "close access theFile"
-        ]
-        script = ["osascript"]
-        for command in commands:
-            script += ["-e", command]
-        subprocess.call(script)
+    if bitmap_classes_ok:
+        if sys.platform == "darwin":
+            fh, filepath = tempfile.mkstemp('.jpg')
+            os.close(fh)
+            commands = [
+                "set theFile to (open for access POSIX file \""
+                + filepath + "\" with write permission)",
+                "try",
+                "    write (the clipboard as JPEG picture) to theFile",
+                "end try",
+                "close access theFile"
+            ]
+            script = ["osascript"]
+            for command in commands:
+                script += ["-e", command]
+            subprocess.call(script)
 
-        im = None
-        if os.stat(filepath).st_size != 0:
-            im = open(filepath)
-        os.unlink(filepath)
-        return im
+            im = None
+            if os.stat(filepath).st_size != 0:
+                im = open(filepath)
+            os.unlink(filepath)
+            return im
+        else:
+            fh, filepath = tempfile.mkstemp('.bmp')
+            import win32clipboard, builtins
+            win32clipboard.OpenClipboard()
+            try:
+                if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
+                    data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
+                else:
+                    data = None
+            finally:
+                win32clipboard.CloseClipboard()
+            if data is None: return None
+
+            bmih = BITMAPINFOHEADER()
+            ctypes.memmove(ctypes.pointer(bmih), data, SIZEOF_BITMAPINFOHEADER)
+            bmfh = BITMAPFILEHEADER()
+            ctypes.memset(ctypes.pointer(bmfh), 0, SIZEOF_BITMAPFILEHEADER)  # zero structure
+            bmfh.bfType = ord('B') | (ord('M') << 8)
+            bmfh.bfSize = SIZEOF_BITMAPFILEHEADER + len(data)  # file size
+            SIZEOF_COLORTABLE = 0
+            bmfh.bfOffBits = SIZEOF_BITMAPFILEHEADER + SIZEOF_BITMAPINFOHEADER + SIZEOF_COLORTABLE
+            with builtins.open(filepath, 'wb') as bmp_file:
+                bmp_file.write(bmfh)
+                bmp_file.write(data)
+            return open(filepath)
     else:
-        fh, filepath = tempfile.mkstemp('.bmp')
-        import win32clipboard, builtins
-        win32clipboard.OpenClipboard()
-        try:
-            if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
-                data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
-            else:
-                data = None
-        finally:
-            win32clipboard.CloseClipboard()
-        if data is None: return None
-
-        bmih = BITMAPINFOHEADER()
-        ctypes.memmove(ctypes.pointer(bmih), data, SIZEOF_BITMAPINFOHEADER)
-        bmfh = BITMAPFILEHEADER()
-        ctypes.memset(ctypes.pointer(bmfh), 0, SIZEOF_BITMAPFILEHEADER)  # zero structure
-        bmfh.bfType = ord('B') | (ord('M') << 8)
-        bmfh.bfSize = SIZEOF_BITMAPFILEHEADER + len(data)  # file size
-        SIZEOF_COLORTABLE = 0
-        bmfh.bfOffBits = SIZEOF_BITMAPFILEHEADER + SIZEOF_BITMAPINFOHEADER + SIZEOF_COLORTABLE
-        with builtins.open(filepath, 'wb') as bmp_file:
-            bmp_file.write(bmfh)
-            bmp_file.write(data)
-        return open(filepath)
+        raise NotImplementedError("grabclipboard is not available on your platform")
 
 def load(filename, size=12):
     """
@@ -1964,9 +1971,9 @@ class ImageDraw(object):
         ink, fill = self._getink(outline, fill)
         coord = self._get_coordinates(xy)
         if fill is not None:
-            cv2.rectangle(self._img_instance, coord[:2], coord[2:4], fill, -width)
+            cv2.rectangle(self._img_instance, tuple(coord[:2]), tuple(coord[2:4]), fill, -width)
         if ink is not None and ink != fill:
-            cv2.rectangle(self._img_instance, coord[:2], coord[2:4], ink, width)
+            cv2.rectangle(self._img_instance, tuple(coord[:2]), tuple(coord[2:4]), ink, width)
 
     def setink(self):
         "Set ink to standard black by default"
