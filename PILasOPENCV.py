@@ -18,7 +18,7 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "1.8"
+VERSION = "1.9"
 
 """
 Version history:
