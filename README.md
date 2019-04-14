@@ -146,6 +146,8 @@ Install it with
 
 # Version history:
 
+2.0: disabled ImageGrab.grabclipboard() in case it throws exceptions which happens e.g. on Ubuntu/Linux
+
 1.9: disabled ImageGrab.grabclipboard() which throw exceptions on some platforms
 
 1.8: ImageGrab.grab() and ImageGrab.grabclipboard() implemented with dependency on mss
