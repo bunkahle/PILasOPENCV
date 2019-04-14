@@ -3,7 +3,7 @@ from distutils.core import setup
 
 setup(
     name='PILasOPENCV',
-    version='1.9',
+    version='2.0',
     author='Andreas Bunkahle',
     author_email='abunkahle@t-online.de',
     description='Wrapper for Image functions which are used and called in the manner of the famous PIL/Pillow module but work internally with OpenCV.',

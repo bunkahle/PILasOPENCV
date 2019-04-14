@@ -8,8 +8,13 @@ import re, os, sys, tempfile
 import numbers
 import mss
 import mss.tools
-import ctypes
-from ctypes.wintypes import WORD, DWORD, LONG
+
+try:
+    import ctypes
+    from ctypes.wintypes import WORD, DWORD, LONG
+    bitmap_classes_ok = True
+except:
+    bitmap_classes_ok = False
 
 try:
     import freetype
@@ -18,10 +23,11 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "1.9"
+VERSION = "2.0"
 
 """
 Version history:
+2.0: disabled ImageGrab.grabclipboard() in case it throws exceptions which happens e.g. on Ubuntu/Linux
 1.9: disabled ImageGrab.grabclipboard() which throws exceptions on some platforms
 1.8 ImageGrab.grab() and ImageGrab.grabclipboard() implemented with dependency on mss
 1.7 fixed fromarray
@@ -179,38 +185,38 @@ MODES = sorted(_MODEINFO)
 # may have to modify the stride calculation in map.c too!
 _MAPMODES = ("L", "P", "RGBX", "RGBA", "CMYK", "I;16", "I;16L", "I;16B")
 
-try:
-    class BITMAPFILEHEADER(ctypes.Structure):
-        _pack_ = 1  # structure field byte alignment
-        _fields_ = [
-            ('bfType', WORD),  # file type ("BM")
-            ('bfSize', DWORD),  # file size in bytes
-            ('bfReserved1', WORD),  # must be zero
-            ('bfReserved2', WORD),  # must be zero
-            ('bfOffBits', DWORD),  # byte offset to the pixel array
-        ]
-    SIZEOF_BITMAPFILEHEADER = ctypes.sizeof(BITMAPFILEHEADER)
+if bitmap_classes_ok:
+    try:
+        class BITMAPFILEHEADER(ctypes.Structure):
+            _pack_ = 1  # structure field byte alignment
+            _fields_ = [
+                ('bfType', WORD),  # file type ("BM")
+                ('bfSize', DWORD),  # file size in bytes
+                ('bfReserved1', WORD),  # must be zero
+                ('bfReserved2', WORD),  # must be zero
+                ('bfOffBits', DWORD),  # byte offset to the pixel array
+            ]
+        SIZEOF_BITMAPFILEHEADER = ctypes.sizeof(BITMAPFILEHEADER)
 
-    class BITMAPINFOHEADER(ctypes.Structure):
-        _pack_ = 1  # structure field byte alignment
-        _fields_ = [
-            ('biSize', DWORD),
-            ('biWidth', LONG),
-            ('biHeight', LONG),
-            ('biPLanes', WORD),
-            ('biBitCount', WORD),
-            ('biCompression', DWORD),
-            ('biSizeImage', DWORD),
-            ('biXPelsPerMeter', LONG),
-            ('biYPelsPerMeter', LONG),
-            ('biClrUsed', DWORD),
-            ('biClrImportant', DWORD)
-        ]
-    SIZEOF_BITMAPINFOHEADER = ctypes.sizeof(BITMAPINFOHEADER)
-    bitmap_classes_ok = True
-except:
-    bitmap_classes_ok = False
-
+        class BITMAPINFOHEADER(ctypes.Structure):
+            _pack_ = 1  # structure field byte alignment
+            _fields_ = [
+                ('biSize', DWORD),
+                ('biWidth', LONG),
+                ('biHeight', LONG),
+                ('biPLanes', WORD),
+                ('biBitCount', WORD),
+                ('biCompression', DWORD),
+                ('biSizeImage', DWORD),
+                ('biXPelsPerMeter', LONG),
+                ('biYPelsPerMeter', LONG),
+                ('biClrUsed', DWORD),
+                ('biClrImportant', DWORD)
+            ]
+        SIZEOF_BITMAPINFOHEADER = ctypes.sizeof(BITMAPINFOHEADER)
+        bitmap_classes_ok = True
+    except:
+        bitmap_classes_ok = False
 
 def getmodebase(mode):
     """
