@@ -1,7 +1,7 @@
 # PILasOPENCV
-Wrapper for Image functions which are used and called in the manner of the famous PIL module but work internally with OpenCV. Since there is no truetype font support for Python in OpenCV (it exists for the OpenCV C libraries) this module might be useful since it supports all kind of truetype fonts to be integrated in images. It depends on the library freetype-py. See below for more details on this.
+Wrapper for Image functions which are used and called in the manner of the famous PIL or pillow module but work internally only with OpenCV and numpy. Since there is no truetype font support for Python in OpenCV (it exists for the OpenCV C libraries) this module might be useful since it supports all kind of truetype fonts to be integrated in images. It depends on the library freetype-py for this. See below for more details on this.
 
-This library can be used to migrate old PIL projects to OPENCV.
+This library can be used to migrate old PIL projects to OPENCV or if for some reason PIL or pillow cannot be used on your machine or your platform.
 
 You install this module with
 
