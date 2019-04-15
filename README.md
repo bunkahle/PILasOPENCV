@@ -146,6 +146,8 @@ Install it with
 
 # Version history:
 
+2.1: though OpenCV does not support gif images, PILasOPENCV now can load gif images by courtesy of the library gif2numpy
+
 2.0: disabled ImageGrab.grabclipboard() in case it throws exceptions which happens e.g. on Ubuntu/Linux
 
 1.9: disabled ImageGrab.grabclipboard() which throw exceptions on some platforms
