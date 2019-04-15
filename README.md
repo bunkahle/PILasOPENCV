@@ -142,7 +142,7 @@ abunkahle@t-online.de
 You need to have numpy, opencv freetype and mss installed to run the module completely.
 Install it with 
 
-     pip install numpy opencv-python freetype-py mss
+     pip install numpy opencv-python freetype-py mss gif2numpy
 
 # Version history:
 
