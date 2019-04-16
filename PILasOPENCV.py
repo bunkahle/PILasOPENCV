@@ -11,6 +11,7 @@ import mss
 import mss.tools
 from io import StringIO
 
+
 try:
     import ctypes
     from ctypes.wintypes import WORD, DWORD, LONG
@@ -25,10 +26,11 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.1"
+VERSION = "2.2"
 
 """
 Version history:
+2.2: Bugfix 
 2.1: though OpenCV does not support gif images, PILasOPENCV now can load gif images by courtesy of the library gif2numpy
 2.0: disabled ImageGrab.grabclipboard() in case it throws exceptions which happens e.g. on Ubuntu/Linux
 1.9: disabled ImageGrab.grabclipboard() which throws exceptions on some platforms
@@ -40,10 +42,21 @@ Version history:
 if sys.version[0] == "2":
     py3 = False
     basstring = basestring
+    fil_object = file
     import cStringIO
+    from operator import isNumberType as isNumberTyp
+    from operator import isSequenceType as isSequenceTyp
 else:
     py3 = True
     basstring = str
+    from io import IOBase
+    import collections
+    fil_object = IOBase
+    def isNumberTyp(obj):
+        return isinstance(obj, numbers.Number)
+    def isSequenceTyp(obj):
+        return isinstance(obj, collections.abc.Sequence)
+
 
 NONE = 0
 MAX_IMAGE_PIXELS = int(1024 * 1024 * 1024 // 4 // 3)
@@ -479,6 +492,14 @@ colormap = {
     "yellowgreen": "#9acd32",
 }
 
+class ImagePointHandler:
+    # used as a mixin by point transforms (for use with im.point)
+    pass
+
+class ImageTransformHandler:
+    # used as a mixin by geometry transforms (for use with im.transform)
+    pass
+
 class Image(object):
     
     def __init__(self, image=None, filename=None, format=None):
@@ -492,7 +513,13 @@ class Image(object):
                 self.format = EXTENSION[ext]
             if self._instance is not None:
                 self.size = (self._instance.shape[1], self._instance.shape[0])
+                if len(self._instance.shape)>2:
+                    self.layers = self.bands = self._instance.shape[2]
+                else:
+                    self.layers = self.bands = 1
                 self.dtype = self._instance.dtype
+                if self.dtype == np.uint8:
+                    self.bits = 8
                 self._mode = self._get_mode(self._instance.shape, self.dtype)
         else:
             self._mode = None
@@ -1024,6 +1051,7 @@ class Image(object):
                                   "Please call ImageChops.offset() instead.")
 
     def point(self, lut, mode=None):
+        "Map image through lookup table"
         raise NotImplementedError("point() has been not implemented in this library. ")
 
     def putpixel(self, xytup, color):
@@ -1229,7 +1257,7 @@ class Image(object):
         if isinstance(fp, basstring):
             cv2.imwrite(fp, self._instance)
             return None
-        if isinstance(fp, file):
+        if isinstance(fp, fil_object):
             fl = open(format, 'w')
             fl.write(fp.read())
             fl.close()
@@ -2565,11 +2593,11 @@ def open(fl, mode='r'):
         # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
         img = Image(_instance, fl)
         return img
-    if isinstance(fl, file):
+    if isinstance(fl, fil_object):
         file_bytes = np.asarray(bytearray(fl.read()), dtype=np.uint8)
-        _instance = cv2.imdecode(file_bytes, cv2.CV_LOAD_IMAGE_UNCHANGED)
+        _instance = cv2.imdecode(file_bytes, cv2.IMREAD_UNCHANGED)
         # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
-        img = Image(_instance, fl.name)
+        img = Image(_instance)
         return img
     if not py3:
         if isinstance(fl, cStringIO.InputType):
