@@ -3,7 +3,7 @@ import PILasOPENCV as Image
 import PILasOPENCV as ImageFilter
 import cv2
 # from PIL import Image
-# from PIL import ImageDraw
+# from PIL import ImageFilter
 
 im0 = Image.open("Images/plane.jpg")
 print("ORIGINAL")
