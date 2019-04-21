@@ -512,6 +512,7 @@ class Image(object):
             self.is_animated = True
         else:
             self.is_animated = False
+        self._frame_nr = 0
         self.exts = exts
         self.image_specs = image_specs
         self._mode = None
@@ -1291,6 +1292,7 @@ class Image(object):
         if frame>=self.n_frames:
             raise EOFError("Frame number is beyond the number of frames")
         else:
+            self._frame_nr = frame
             self._instance = self._paste(self.frames[0], self.frames[frame], self.exts[frame]["left"], self.exts[frame]["top"])
 
     def setim(self, numpy_image):
@@ -1369,7 +1371,7 @@ class Image(object):
 
         :returns: Frame number, starting with 0.
         """
-        return 0
+        return self._frame_nr
 
     def thumbnail(self, size, resample=BICUBIC):
         """
