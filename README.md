@@ -95,7 +95,7 @@ PILasOPENCV supports the use of truetype fonts with Python. The python module fr
 	im.show()
     
 # Attention:
-This is a very unstable development version. Use with care. Not much testing has been done to it though tests have been done which can be found in the tests directory.
+This is a quite stable development version. Still use with care. Testing has been done to it and tests can be found in the tests directory.
 
 # TO DO:
 The most used classes and methods like ImageMode, ImageColor, ImageChops are implemented but have not been fully tested. Image, ImageFont, ImageDraw, ImageGrab and ImageFilter have been tested with several testcases.
@@ -145,6 +145,8 @@ Install it with
      pip install numpy opencv-python freetype-py mss gif2numpy
 
 # Version history:
+
+2.2: Bugfix for Python3 on file objects, multiple frames from gifs can be loaded now and can be retrieved with seek(frame)
 
 2.1: though OpenCV does not support gif images, PILasOPENCV now can load gif images by courtesy of the library gif2numpy
 
