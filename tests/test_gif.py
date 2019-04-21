@@ -1,8 +1,14 @@
 from __future__ import print_function
 import PILasOPENCV as Image
-import cv2
+# from PIL import Image
 
-images = "Images/hopper.gif", "Images/audrey.gif", "Images/testcolors.gif"
+images = "Images/hopper.gif", "Images/audrey.gif", "Images/Rotating_earth.gif", "Images/testcolors.gif"
 for image in images:
+    # image = os.path.join(os.getcwd(), image)
+    print(image)
     pilimage = Image.open(image)
     pilimage.show()
+    if pilimage.is_animated:
+        print("Image has", pilimage.n_frames, "frames")
+        pilimage.seek(pilimage.n_frames-1)
+        pilimage.show()
