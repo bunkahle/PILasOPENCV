@@ -7,7 +7,7 @@ You install this module with
 
     pip install PILasOPENCV
     
-or you donwload the module and install it with:
+or you download the module and install it with:
 
     python setup.py install
     
@@ -139,7 +139,7 @@ If you want to fork this project, feel free to do so. Give me a message in case 
 abunkahle@t-online.de
 
 # Dependencies:
-You need to have numpy, opencv freetype and mss installed to run the module completely.
+You need to have numpy, opencv, freetype, mss and gif2numpy installed to run the module completely.
 Install it with 
 
      pip install numpy opencv-python freetype-py mss gif2numpy
