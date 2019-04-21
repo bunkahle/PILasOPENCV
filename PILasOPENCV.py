@@ -30,7 +30,7 @@ VERSION = "2.2"
 
 """
 Version history:
-2.2: Bugfix 
+2.2: Bugfix for Python3 on file objects, multiple frames from gifs can be loaded now and can be retrieved with seek(frame)
 2.1: though OpenCV does not support gif images, PILasOPENCV now can load gif images by courtesy of the library gif2numpy
 2.0: disabled ImageGrab.grabclipboard() in case it throws exceptions which happens e.g. on Ubuntu/Linux
 1.9: disabled ImageGrab.grabclipboard() which throws exceptions on some platforms
@@ -502,10 +502,18 @@ class ImageTransformHandler:
 
 class Image(object):
     
-    def __init__(self, image=None, filename=None, format=None):
+    def __init__(self, image=None, filename=None, format=None, instances=[], exts=[], image_specs={}):
         self._instance = image
         self.filename = filename
         self.format = format
+        self.frames = instances
+        self.n_frames = len(self.frames)
+        if self.n_frames>1:
+            self.is_animated = True
+        else:
+            self.is_animated = False
+        self.exts = exts
+        self.image_specs = image_specs
         self._mode = None
         if image is not None or filename is not None:
             if self.filename is not None:
@@ -1280,10 +1288,10 @@ class Image(object):
         :exception EOFError: If the call attempts to seek beyond the end
             of the sequence.
         """
-
-        # overridden by file handlers
-        if frame != 0:
-            raise EOFError
+        if frame>=self.n_frames:
+            raise EOFError("Frame number is beyond the number of frames")
+        else:
+            self._instance = self._paste(self.frames[0], self.frames[frame], self.exts[frame]["left"], self.exts[frame]["top"])
 
     def setim(self, numpy_image):
         mode = Image()._get_mode(numpy_image.shape, numpy_image.dtype)
@@ -2587,11 +2595,13 @@ def open(fl, mode='r'):
     _format = None
     if isinstance(fl, basstring):
         if os.path.splitext(fl)[1].lower() == ".gif":
-            _instance = gif2numpy.convert(fl)
+            _instances, _exts, _image_specs = gif2numpy.convert(fl)
+            _instance = _instances[0]
+            img = Image(_instance, fl, instances = _instances, exts = _exts, image_specs = _image_specs)
         else:
             _instance = cv2.imread(fl, cv2.IMREAD_UNCHANGED)
         # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
-        img = Image(_instance, fl)
+            img = Image(_instance, fl)
         return img
     if isinstance(fl, fil_object):
         file_bytes = np.asarray(bytearray(fl.read()), dtype=np.uint8)

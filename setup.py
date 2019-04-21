@@ -3,7 +3,7 @@ from distutils.core import setup
 
 setup(
     name='PILasOPENCV',
-    version='2.1',
+    version='2.2',
     author='Andreas Bunkahle',
     author_email='abunkahle@t-online.de',
     description='Wrapper for Image functions which are used and called in the manner of the famous PIL/Pillow module but work internally with OpenCV.',
@@ -20,7 +20,7 @@ setup(
     #   3 - Alpha
     #   4 - Beta
     #   5 - Production/Stable
-    'Development Status :: 4 - Beta',
+    'Development Status :: 5 - Production/Stable',
     'License :: OSI Approved :: MIT License',
     # Specify the Python versions you support here. In particular, ensure
     # that you indicate whether you support Python 2, Python 3 or both.
