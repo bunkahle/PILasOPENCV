@@ -4,7 +4,6 @@ import PILasOPENCV as Image
 
 images = "Images/hopper.gif", "Images/audrey.gif", "Images/Rotating_earth.gif", "Images/testcolors.gif"
 for image in images:
-    # image = os.path.join(os.getcwd(), image)
     print(image)
     pilimage = Image.open(image)
     pilimage.show()
