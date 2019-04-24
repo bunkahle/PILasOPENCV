@@ -11,7 +11,6 @@ import mss
 import mss.tools
 from io import StringIO
 
-
 try:
     import ctypes
     from ctypes.wintypes import WORD, DWORD, LONG
@@ -26,10 +25,11 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.2"
+VERSION = "2.3"
 
 """
 Version history:
+2.3: Updated the module for gif2numpy Version 1.2
 2.2: Bugfix for Python3 on file objects, multiple frames from gifs can be loaded now and can be retrieved with seek(frame)
 2.1: though OpenCV does not support gif images, PILasOPENCV now can load gif images by courtesy of the library gif2numpy
 2.0: disabled ImageGrab.grabclipboard() in case it throws exceptions which happens e.g. on Ubuntu/Linux
@@ -233,63 +233,6 @@ if bitmap_classes_ok:
         bitmap_classes_ok = True
     except:
         bitmap_classes_ok = False
-
-def compress(uncompressed):
-    """Compress a string to a list of output symbols."""
- 
-    # Build the dictionary.
-    dict_size = 256
-    dictionary = dict((chr(i), i) for i in range(dict_size))
-    # in Python 3: dictionary = {chr(i): i for i in range(dict_size)}
- 
-    w = ""
-    result = []
-    for c in uncompressed:
-        wc = w + c
-        if wc in dictionary:
-            w = wc
-        else:
-            result.append(dictionary[w])
-            # Add wc to the dictionary.
-            dictionary[wc] = dict_size
-            dict_size += 1
-            w = c
- 
-    # Output the code for w.
-    if w:
-        result.append(dictionary[w])
-    return result
- 
- 
-def decompress(compressed):
-    """Decompress a list of output ks to a string."""
-    
- 
-    # Build the dictionary.
-    dict_size = 256
-    dictionary = dict((i, chr(i)) for i in range(dict_size))
-    # in Python 3: dictionary = {i: chr(i) for i in range(dict_size)}
- 
-    # use StringIO, otherwise this becomes O(N^2)
-    # due to string concatenation in a loop
-    result = StringIO()
-    w = chr(compressed.pop(0))
-    result.write(w)
-    for k in compressed:
-        if k in dictionary:
-            entry = dictionary[k]
-        elif k == dict_size:
-            entry = w + w[0]
-        else:
-            raise ValueError('Bad compressed k: %s' % k)
-        result.write(entry)
- 
-        # Add w+entry[0] to the dictionary.
-        dictionary[dict_size] = w + entry[0]
-        dict_size += 1
- 
-        w = entry
-    return result.getvalue()
 
 def getmodebase(mode):
     """
@@ -1293,7 +1236,7 @@ class Image(object):
             raise EOFError("Frame number is beyond the number of frames")
         else:
             self._frame_nr = frame
-            self._instance = self._paste(self.frames[0], self.frames[frame], self.exts[frame]["left"], self.exts[frame]["top"])
+            self._instance = self.frames[frame]
 
     def setim(self, numpy_image):
         mode = Image()._get_mode(numpy_image.shape, numpy_image.dtype)
