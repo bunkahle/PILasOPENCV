@@ -146,6 +146,8 @@ Install it with
 
 # Version history:
 
+2.3: Updated the module for gif2numpy Version 1.2
+
 2.2: Bugfix for Python3 on file objects, multiple frames from gifs can be loaded now and can be retrieved with seek(frame)
 
 2.1: though OpenCV does not support gif images, PILasOPENCV now can load gif images by courtesy of the library gif2numpy
