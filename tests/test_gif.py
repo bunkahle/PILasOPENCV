@@ -9,5 +9,6 @@ for image in images:
     pilimage.show()
     if pilimage.is_animated:
         print("Image has", pilimage.n_frames, "frames")
-        pilimage.seek(pilimage.n_frames-1)
-        pilimage.show()
+        for i in range(pilimage.n_frames):
+        	pilimage.seek(i)
+        	pilimage.show()
