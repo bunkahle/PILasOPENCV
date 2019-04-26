@@ -4,11 +4,25 @@
 from __future__ import print_function
 import numpy as np
 import cv2
-import gif2numpy
+try:
+    import gif2numpy
+    gif2numpy_installed = True
+except:
+    gif2numpy_installed = False
+try:
+    import numpy2gif
+    numpy2gif_installed = True
+except:
+    numpy2gif_installed = False
+
 import re, os, sys, tempfile
 import numbers
-import mss
-import mss.tools
+try:
+    import mss
+    import mss.tools
+    mss_installed = True
+except:
+    mss_installed = False
 from io import StringIO
 
 try:
@@ -25,10 +39,12 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.3"
+VERSION = "2.4"
 
 """
 Version history:
+2.4: Caught several exceptions in case dependencies modules are not installed you can still work with the basic functions, 
+     ImageDraw method bitmap implemented, ImageChops method screen implemented, saves now single or multiple frames in gif files 
 2.3: Updated the module for gif2numpy Version 1.2
 2.2: Bugfix for Python3 on file objects, multiple frames from gifs can be loaded now and can be retrieved with seek(frame)
 2.1: though OpenCV does not support gif images, PILasOPENCV now can load gif images by courtesy of the library gif2numpy
@@ -790,7 +806,6 @@ class Image(object):
             elif len(img_color._instance.shape) != len(self._instance.shape):
                 dest_mode = self._mode
                 _img_color = self._convert(dest_mode, obj=_img_color)
-
         else: # pasting a colorbox 
             if box is None:
                 raise ValueError("cannot determine region size; use 4-item box")
@@ -1207,7 +1222,16 @@ class Image(object):
            may have been created, and may contain partial data.
         """
         if isinstance(fp, basstring):
-            cv2.imwrite(fp, self._instance)
+            if fp.lower().endswith(".gif"):
+                if numpy2gif_installed:
+                    if self.is_animated:
+                        numpy2gif.write_gif(self.frames, fp, fps=100//self.exts[0][['delay_time']])
+                    else:
+                        numpy2gif.write_gif(self._instance, fp)
+                else:
+                    NotImplementedError("numpy2gif is not installed so cannot save gif images, install it with: pip install numpy2gif")
+            else:
+                cv2.imwrite(fp, self._instance)
             return None
         if isinstance(fp, fil_object):
             fl = open(format, 'w')
@@ -1218,7 +1242,7 @@ class Image(object):
 
     def seek(self, frame):
         """
-        Seeks to the given frame in this sequence file. If you seek
+        Seeks to the given frame in this sequence file. If you numpy2gifek
         beyond the end of the sequence, the method raises an
         **EOFError** exception. When a sequence file is opened, the
         library automatically seeks to frame 0.
@@ -1530,69 +1554,75 @@ def getmask(text, ttf_font):
     return Z
 
 def grab(bbox=None):
-    fh, filepath = tempfile.mkstemp('.png')
-    with mss.mss() as sct:
-        # The screen part to capture
-        if bbox is None:
-            filepath = sct.shot(mon=-1, output=filepath)
-        else:
-            monitor = {"top": bbox[1], "left": bbox[0], "width": bbox[2]-bbox[0], "height": bbox[3]-bbox[1]}
-            # Grab the data
-            sct_img = sct.grab(monitor)
-            # Save to the picture file
-            mss.tools.to_png(sct_img.rgb, sct_img.size, output=filepath)
-    return open(filepath)
+    if mss_installed:
+        fh, filepath = tempfile.mkstemp('.png')
+        with mss.mss() as sct:
+            # The screen part to capture
+            if bbox is None:
+                filepath = sct.shot(mon=-1, output=filepath)
+            else:
+                monitor = {"top": bbox[1], "left": bbox[0], "width": bbox[2]-bbox[0], "height": bbox[3]-bbox[1]}
+                # Grab the data
+                sct_img = sct.grab(monitor)
+                # Save to the picture file
+                mss.tools.to_png(sct_img.rgb, sct_img.size, output=filepath)
+        return open(filepath)
+    else:
+        NotImplementedError("mss is not installed so there is no grab method available, install it with: pip install mss")
     
 def grabclipboard():
-    if bitmap_classes_ok:
-        if sys.platform == "darwin":
-            fh, filepath = tempfile.mkstemp('.jpg')
-            os.close(fh)
-            commands = [
-                "set theFile to (open for access POSIX file \""
-                + filepath + "\" with write permission)",
-                "try",
-                "    write (the clipboard as JPEG picture) to theFile",
-                "end try",
-                "close access theFile"
-            ]
-            script = ["osascript"]
-            for command in commands:
-                script += ["-e", command]
-            subprocess.call(script)
+    if mss_installed:
+        if bitmap_classes_ok:
+            if sys.platform == "darwin":
+                fh, filepath = tempfile.mkstemp('.jpg')
+                os.close(fh)
+                commands = [
+                    "set theFile to (open for access POSIX file \""
+                    + filepath + "\" with write permission)",
+                    "try",
+                    "    write (the clipboard as JPEG picture) to theFile",
+                    "end try",
+                    "close access theFile"
+                ]
+                script = ["osascript"]
+                for command in commands:
+                    script += ["-e", command]
+                subprocess.call(script)
 
-            im = None
-            if os.stat(filepath).st_size != 0:
-                im = open(filepath)
-            os.unlink(filepath)
-            return im
+                im = None
+                if os.stat(filepath).st_size != 0:
+                    im = open(filepath)
+                os.unlink(filepath)
+                return im
+            else:
+                fh, filepath = tempfile.mkstemp('.bmp')
+                import win32clipboard, builtins
+                win32clipboard.OpenClipboard()
+                try:
+                    if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
+                        data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
+                    else:
+                        data = None
+                finally:
+                    win32clipboard.CloseClipboard()
+                if data is None: return None
+
+                bmih = BITMAPINFOHEADER()
+                ctypes.memmove(ctypes.pointer(bmih), data, SIZEOF_BITMAPINFOHEADER)
+                bmfh = BITMAPFILEHEADER()
+                ctypes.memset(ctypes.pointer(bmfh), 0, SIZEOF_BITMAPFILEHEADER)  # zero structure
+                bmfh.bfType = ord('B') | (ord('M') << 8)
+                bmfh.bfSize = SIZEOF_BITMAPFILEHEADER + len(data)  # file size
+                SIZEOF_COLORTABLE = 0
+                bmfh.bfOffBits = SIZEOF_BITMAPFILEHEADER + SIZEOF_BITMAPINFOHEADER + SIZEOF_COLORTABLE
+                with builtins.open(filepath, 'wb') as bmp_file:
+                    bmp_file.write(bmfh)
+                    bmp_file.write(data)
+                return open(filepath)
         else:
-            fh, filepath = tempfile.mkstemp('.bmp')
-            import win32clipboard, builtins
-            win32clipboard.OpenClipboard()
-            try:
-                if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_DIB):
-                    data = win32clipboard.GetClipboardData(win32clipboard.CF_DIB)
-                else:
-                    data = None
-            finally:
-                win32clipboard.CloseClipboard()
-            if data is None: return None
-
-            bmih = BITMAPINFOHEADER()
-            ctypes.memmove(ctypes.pointer(bmih), data, SIZEOF_BITMAPINFOHEADER)
-            bmfh = BITMAPFILEHEADER()
-            ctypes.memset(ctypes.pointer(bmfh), 0, SIZEOF_BITMAPFILEHEADER)  # zero structure
-            bmfh.bfType = ord('B') | (ord('M') << 8)
-            bmfh.bfSize = SIZEOF_BITMAPFILEHEADER + len(data)  # file size
-            SIZEOF_COLORTABLE = 0
-            bmfh.bfOffBits = SIZEOF_BITMAPFILEHEADER + SIZEOF_BITMAPINFOHEADER + SIZEOF_COLORTABLE
-            with builtins.open(filepath, 'wb') as bmp_file:
-                bmp_file.write(bmfh)
-                bmp_file.write(data)
-            return open(filepath)
+            raise NotImplementedError("grabclipboard is not available on your platform")
     else:
-        raise NotImplementedError("grabclipboard is not available on your platform")
+        NotImplementedError("mss is not installed so there is no grabclipboard method available, install it with: pip install mss")
 
 def load(filename, size=12):
     """
@@ -1633,7 +1663,7 @@ def truetype(font=None, size=10, index=0, encoding="",
     :exception IOError: If the file could not be read.
     """
     if not freetype_installed:
-        raise NotImplementedError("freetype-py is not installed or the libfreetype.dll/dylib/so is missing")
+        raise NotImplementedError("freetype-py is not installed or the libfreetype.dll/dylib/so is missing, if freetype-py is not installed, install it with pip install freetype-py")
     fontpath = font
     font = FreeTypeFont(font, size)
     if font.font is not None:
@@ -1837,15 +1867,12 @@ class ImageDraw(object):
 
     def bitmap(self, xy, bitmap, fill=None):
         "Draw a bitmap."
-        raise NotImplementedError("bitmap() has been not implemented in this library. ")
-        # there is still a bug in composite with it, needs fix, outcomment previous and find it
         ink, fill = self._getink(fill)
         if ink is None:
             ink = fill
         if ink is not None:
             box = (xy[0], xy[1], bitmap._instance.shape[1]+xy[0], bitmap._instance.shape[0]+xy[1])
-            self.img.paste(ink, box, mask=bitmap._instance)
-            # self.draw.draw_bitmap(xy, bitmap.im, ink)
+            self.img.paste(ink, box, mask=bitmap)
 
     def chord(self, box, start, end, fill=None, outline=None, width=1):
         "Draw a chord."
@@ -2540,9 +2567,12 @@ def open(fl, mode='r'):
     _format = None
     if isinstance(fl, basstring):
         if os.path.splitext(fl)[1].lower() == ".gif":
-            _instances, _exts, _image_specs = gif2numpy.convert(fl)
-            _instance = _instances[0]
-            img = Image(_instance, fl, instances = _instances, exts = _exts, image_specs = _image_specs)
+            if gif2numpy_installed:
+                _instances, _exts, _image_specs = gif2numpy.convert(fl)
+                _instance = _instances[0]
+                img = Image(_instance, fl, instances = _instances, exts = _exts, image_specs = _image_specs)
+            else:
+                raise NotImplementedError("gif2numpy has not been installed. Unable to read gif images, install it with: pip install gif2numpy")
         else:
             _instance = cv2.imread(fl, cv2.IMREAD_UNCHANGED)
         # _mode = Image()._get_mode(_instance.shape, _instance.dtype)
@@ -2782,11 +2812,13 @@ def multiply(image1, image2):
 
 def screen(image1, image2):
     "Superimpose two negative images"
-    raise NotImplementedError("screen() has been not implemented in this library. ")
     # Superimpose negative images
     # (MAX - ((MAX - image1) * (MAX - image2) / MAX)).
     # <p>
     # Superimposes two inverted images on top of each other.
+    image1_copy, image2_copy = _reduce_images(image1, image2)
+    max_image = np.maximum(image1_copy, image2_copy)
+    return (max_image - ((max_image - image1_copy) * (max_image - image2_copy) / max_image))
 
 def add(image1, image2, scale=1.0, offset=0):
     "Add two images"
