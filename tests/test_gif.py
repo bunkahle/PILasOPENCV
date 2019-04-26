@@ -11,4 +11,4 @@ for image in images:
         print("Image has", pilimage.n_frames, "frames")
         for i in range(pilimage.n_frames):
         	pilimage.seek(i)
-        	pilimage.show()
+        	pilimage.show(wait=66)
