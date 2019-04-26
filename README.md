@@ -139,10 +139,10 @@ If you want to fork this project, feel free to do so. Give me a message in case 
 abunkahle@t-online.de
 
 # Dependencies:
-You need to have numpy, opencv, freetype, mss and gif2numpy installed to run the module completely.
+You need to have numpy, opencv, freetype, mss, gif2numpy and numpy2gif installed to run the module completely.
 Install it with 
 
-     pip install numpy opencv-python freetype-py mss gif2numpy
+     pip install numpy opencv-python freetype-py mss gif2numpy numpy2gif
 
 # Version history:
 
