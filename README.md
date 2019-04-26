@@ -1,5 +1,5 @@
 # PILasOPENCV
-Wrapper for Image functions which are used and called in the manner of the famous PIL or pillow module but work internally only with OpenCV and numpy. Since there is no truetype font support for Python in OpenCV (it exists for the OpenCV C libraries) this module might be useful since it supports all kind of truetype fonts to be integrated in images. It depends on the library freetype-py for this. See below for more details on this. You can also load gif images into the numpy format thanks to gif2numpy module. OpenCV does not support the gif format.
+Wrapper for Image functions which are used and called in the manner of the famous PIL or pillow module but work internally only with OpenCV and numpy. Since there is no truetype font support for Python in OpenCV (it exists for the OpenCV C libraries) this module might be useful since it supports all kind of truetype fonts to be integrated in images. It depends on the library freetype-py for this. See below for more details on this. You can also load and save gif images into the numpy format thanks to gif2numpy module. OpenCV does not support the gif format.
 
 This library can be used to migrate old PIL projects to OPENCV or if for some reason PIL or pillow cannot be used on your machine or your platform.
 
@@ -145,6 +145,9 @@ Install it with
      pip install numpy opencv-python freetype-py mss gif2numpy
 
 # Version history:
+
+2.4: Caught several exceptions in case dependencies modules are not installed you can still work with the basic functions, 
+     ImageDraw method bitmap implemented, ImageChops method screen implemented, saves now single or multiple frames in gif files 
 
 2.3: Updated the module for gif2numpy Version 1.2
 
