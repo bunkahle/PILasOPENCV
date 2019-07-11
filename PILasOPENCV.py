@@ -39,10 +39,14 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.4"
+VERSION = "2.6"
 
 """
 Version history:
+2.6: Bugfix for method show: Old windows were not deleted so it came to display errors, fixed
+2.5: Bugfixes for coordinates which were given as float instead of integers when drawing polygons, texts, lines, points, rectangles 
+     bugfix for composite when alphamask and images had not the same amount of channels
+     bugfix in floodfill when value was given as single integer
 2.4: Caught several exceptions in case dependencies modules are not installed you can still work with the basic functions, 
      ImageDraw method bitmap implemented, ImageChops method screen implemented, saves now single or multiple frames in gif files 
 2.3: Updated the module for gif2numpy Version 1.2
@@ -121,11 +125,11 @@ NORMAL = 0
 SEQUENCE = 1
 CONTAINER = 2
 
-NEAREST = cv2.INTER_NEAREST
-BILINEAR = INTER_LINEAR = cv2.INTER_LINEAR
-BICUBIC = cv2.INTER_CUBIC
-LANCZOS = cv2.INTER_LANCZOS4
-INTERAREA = cv2.INTER_AREA
+NEAREST = cv2.INTER_NEAREST # 0
+BILINEAR = INTER_LINEAR = cv2.INTER_LINEAR # 1
+BICUBIC = cv2.INTER_CUBIC # 2
+LANCZOS = cv2.INTER_LANCZOS4 # 4
+INTERAREA = cv2.INTER_AREA # 3
 
 # --------------------------------------------------------------------
 # Registries
@@ -1268,13 +1272,15 @@ class Image(object):
             raise ValueError("Modes of mother image and child image do not match", self._mode, mode)
         self._instance = numpy_image
 
-    def show(self, title=None, command=None, wait=0):
+    def show(self, title=None, command=None, wait=0, destroyWindow=True):
         "shows the image in a window"
         if title is None:
             title = ""
         if command is None:
             cv2.imshow(title, self._instance)
             cv2.waitKey(wait)
+            if destroyWindow:
+                cv2.destroyWindow(title)
         else:
             flag, fname = tempfile.mkstemp()
             cv2.imwrite(fname, self._instance)
@@ -1754,13 +1760,13 @@ class ImageDraw(object):
 
     def _get_coordinates(self, xy):
         "Transform two tuples in a 4 array or pass the 4 array through"
-        coord = []
         if isinstance(xy[0], tuple):
+            coord = []
             for i in range(len(xy)):
-                coord.append(xy[i][0])
-                coord.append(xy[i][1])
+                coord.append(int(xy[i][0]))
+                coord.append(int(xy[i][1]))
         else:
-            coord = xy
+            coord = [int(i) for i in xy]
         return coord
 
     def _get_ellipse_bb(x, y, major, minor, angle_deg=0):
@@ -2116,7 +2122,7 @@ class ImageDraw(object):
                     else:
                         img[:] = ink
                     TextImg = Image(img)
-                    box = [xy[0], xy[1]+old_height]
+                    box = [int(xy[0]), int(xy[1]+old_height)]
                     self.img.paste(TextImg, box=box, mask=MaskImg)
                     old_height = old_height + height
 
@@ -2174,11 +2180,13 @@ def floodfill(image, xy, value, border=None, thresh=0, flags=130820):
         non-homogeneous, but similar, colors.
     """
     _img_instance = image.getim()
-    value = value[::-1]
+    if isinstance(value, tuple) or isinstance(value, list):
+        value = value[::-1]
     h, w = _img_instance.shape[:2]
     mask = np.zeros((h+2, w+2), np.uint8)
     mask[:] = 0
     lo = hi = thresh
+    xy = tuple([int(i) for i in xy])
     cv2.floodFill(_img_instance, mask, xy, value, (lo,)*3, (hi,)*3, flags)
 
 class ImageColor(object):
@@ -2637,7 +2645,14 @@ def composite(background, foreground, mask, np_image=False, neg_mask=False):
                 img[:,:,3] = alphamask
             alphamask = img.copy()
     # Multiply the foreground with the alpha mask
-    foreground = cv2.multiply(alphamask, foreground)
+    try:
+        foreground = cv2.multiply(alphamask, foreground)
+    except:
+        if alphamask.shape[2] == 1 and foreground.shape[2] == 3:
+            triplemask = cv2.merge((alphamask, alphamask, alphamask))
+            foreground = cv2.multiply(triplemask, foreground)
+        else:
+            raise ValueError("OpenCV Error: Sizes of input arguments do not match (The operation is neither 'array op array' (where arrays have the same size and the same number of channels), nor 'array op scalar', nor 'scalar op array') in cv::arithm_op, file ..\..\..\..\opencv\modules\core\src\arithm.cpp")
     # Multiply the background with ( 1 - alpha )
     bslen = len(background.shape)
     if len(alphamask.shape) != bslen:
@@ -2651,7 +2666,13 @@ def composite(background, foreground, mask, np_image=False, neg_mask=False):
             if background.shape[2] == 4:
                 img[:,:,3] = alphamask
             alphamask = img.copy()
-    background = cv2.multiply(1.0 - alphamask, background)
+    try:
+        background = cv2.multiply(1.0 - alphamask, background)
+    except:
+        if alphamask.shape[2] == 1 and foreground.shape[2] == 3:
+            background = cv2.multiply(1.0 - triplemask, background)
+        else:
+            raise ValueError("OpenCV Error: Sizes of input arguments do not match (The operation is neither 'array op array' (where arrays have the same size and the same number of channels), nor 'array op scalar', nor 'scalar op array') in cv::arithm_op, file ..\..\..\..\opencv\modules\core\src\arithm.cpp")
     # Add the masked foreground and background
     outImage = cv2.add(foreground, background)
     outImage = outImage/255
