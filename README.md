@@ -146,6 +146,12 @@ Install it with
 
 # Version history:
 
+2.6: Bugfix for method show: Old windows were not deleted so it came to display errors, fixed
+
+2.5: Bugfixes for coordinates which were given as float instead of integers when drawing polygons, texts, lines, points, rectangles 
+     bugfix for composite when alphamask and images had not the same amount of channels
+     bugfix in floodfill when value was given as single integer
+
 2.4: Caught several exceptions in case dependencies modules are not installed you can still work with the basic functions, 
      ImageDraw method bitmap implemented, ImageChops method screen implemented, saves now single or multiple frames in gif files 
 
