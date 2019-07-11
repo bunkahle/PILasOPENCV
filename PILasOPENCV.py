@@ -39,10 +39,11 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.6"
+VERSION = "2.7"
 
 """
 Version history:
+2.7: Bugfix when drawing text and lines or other draw objects the lines were not drawn, fixed
 2.6: Bugfix for method show: Old windows were not deleted so it came to display errors, fixed
 2.5: Bugfixes for coordinates which were given as float instead of integers when drawing polygons, texts, lines, points, rectangles 
      bugfix for composite when alphamask and images had not the same amount of channels
@@ -1854,8 +1855,10 @@ class ImageDraw(object):
                     e = (endx, endy)
                     cv2.line(self._img_instance, center, st, ink, width)
                     cv2.line(self._img_instance, center, e, ink, width)
+                self.img._instance = self._img_instance
             else:
                 cv2.ellipse(self._img_instance, center, axes, 0, start, end, ink, width)
+                self.img._instance = self._img_instance
             if line:
                 startx, starty = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, start)
                 endx, endy = self._get_pointFromEllipseAngle(center[0], center[1], axis1, axis2, end)
@@ -1869,7 +1872,8 @@ class ImageDraw(object):
                     mid_chord = ((mid_line[0]+midx)//2, (mid_line[1]+midy)//2)
                     h, w = self._img_instance.shape[:2]
                     mask = np.zeros((h + 2, w + 2), np.uint8)
-                    cv2.floodFill(self._img_instance, mask, mid_chord, fillcolor);
+                    cv2.floodFill(self._img_instance, mask, mid_chord, fillcolor)
+                self.img._instance = self._img_instance
 
     def bitmap(self, xy, bitmap, fill=None):
         "Draw a bitmap."
@@ -1897,8 +1901,10 @@ class ImageDraw(object):
         ebox = (center, (axis1, axis2), 0)
         if fill is not None:
             cv2.ellipse(self._img_instance, ebox, fill, -1)
+            self.img._instance = self._img_instance
         if ink is not None and ink != fill:
             cv2.ellipse(self._img_instance, ebox, ink, width)
+            self.img._instance = self._img_instance
 
     def getfont(self):
         """Get the current default font.
@@ -1915,6 +1921,7 @@ class ImageDraw(object):
             start = (coord[co], coord[co+1])
             end = (coord[co+2], coord[co+3])
             cv2.line(self._img_instance, start, end, ink, width)
+            self.img._instance = self._img_instance
         if joint == "curve" and width > 4:
             for i in range(1, len(xy)-1):
                 point = xy[i]
@@ -2016,6 +2023,7 @@ class ImageDraw(object):
         "Draw a point without transformations"
         elem = (x, y)
         cv2.circle(self._img_instance, elem, 1, fill, thickness=-1)
+        self.img._instance = self._img_instance
 
     def point(self, xy, fill=None, width=1):
         "Draw a point."
@@ -2025,6 +2033,7 @@ class ImageDraw(object):
             elem = (coord[co], coord[co+1])
             # cv2.line(self._img_instance, elem, elem, ink, width)
             cv2.circle(self._img_instance, elem, width, ink, thickness=-1)
+            self.img._instance = self._img_instance
 
     def polygon(self, xy, fill=None, outline=None):
         "Draw a polygon."
@@ -2039,6 +2048,7 @@ class ImageDraw(object):
             except:
                 coord = coord.reshape((-1, 1, 2))
                 cv2.fillPoly(self._img_instance, [coord], fill)
+            self.img._instance = self._img_instance
         if ink is not None and ink != fill:
             # self.draw.draw_polygon(xy, ink, 0)
             try:
@@ -2046,6 +2056,7 @@ class ImageDraw(object):
             except:
                 coord = coord.reshape((-1, 1, 2))
                 cv2.polylines(self._img_instance, [coord], True, ink)
+            self.img._instance = self._img_instance
 
     def rectangle(self, xy, fill=None, outline=None, width=1):
         "Draw a rectangle."
@@ -2053,8 +2064,10 @@ class ImageDraw(object):
         coord = self._get_coordinates(xy)
         if fill is not None:
             cv2.rectangle(self._img_instance, tuple(coord[:2]), tuple(coord[2:4]), fill, -width)
+            self.img._instance = self._img_instance
         if ink is not None and ink != fill:
             cv2.rectangle(self._img_instance, tuple(coord[:2]), tuple(coord[2:4]), ink, width)
+            self.img._instance = self._img_instance
 
     def setink(self):
         "Set ink to standard black by default"
@@ -2096,6 +2109,7 @@ class ImageDraw(object):
                 w, h = self.textsize(text, font=fontFace, scale=scale, thickness=thickness)
                 xy = (xy[0], xy[1]+h)
                 cv2.putText(self._img_instance, text, xy, fontFace, fontScale, ink, thickness)
+                self.img._instance = self._img_instance
             else:
                 if self._multiline_check(text):
                     lines = text.split("\n")
@@ -2124,6 +2138,7 @@ class ImageDraw(object):
                     TextImg = Image(img)
                     box = [int(xy[0]), int(xy[1]+old_height)]
                     self.img.paste(TextImg, box=box, mask=MaskImg)
+                    self._img_instance = self.img._instance
                     old_height = old_height + height
 
 
