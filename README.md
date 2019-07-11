@@ -72,27 +72,27 @@ You can export and import cv2/numpy images from and to an Image instance with th
 # Usage of truetype fonts in PILasOPENCV
 PILasOPENCV supports the use of truetype fonts with Python. The python module freetype-py needs to be installed for this. To import and use truetype fonts you can do the following:
 
-	from __future__ import print_function
-	import PILasOPENCV as Image
-	import PILasOPENCV as ImageDraw
-	import PILasOPENCV as ImageFont
-	import cv2
-	# was: from PIL import Image, ImageDraw, ImageFont
+    from __future__ import print_function
+    import PILasOPENCV as Image
+    import PILasOPENCV as ImageDraw
+    import PILasOPENCV as ImageFont
+    import cv2
+    # was: from PIL import Image, ImageDraw, ImageFont
 
-	font = ImageFont.truetype("arial.ttf", 18)
-	print(font)
-	im = Image.open("lena.jpg")
-	draw = ImageDraw.Draw(im)
-	text = "Lena's image"
-	draw.text((249,455), text, font=font, fill=(0, 0, 0))
-	print(ImageFont.getsize(text, font))
-	mask = ImageFont.getmask(text, font)
-	# in PIL this code is written differently:
-	# print(font.getsize(text))
-	# mask = font.getmask(text)
-	print(type(mask))
-	cv2.imshow("mask", mask)
-	im.show()
+    font = ImageFont.truetype("arial.ttf", 18)
+    print(font)
+    im = Image.open("lena.jpg")
+    draw = ImageDraw.Draw(im)
+    text = "Lena's image"
+    draw.text((249,455), text, font=font, fill=(0, 0, 0))
+    print(ImageFont.getsize(text, font))
+    mask = ImageFont.getmask(text, font)
+    # in PIL this code is written differently:
+    # print(font.getsize(text))
+    # mask = font.getmask(text)
+    print(type(mask))
+    cv2.imshow("mask", mask)
+    im.show()
     
 # Attention:
 This is a quite stable development version. Still use with care. Testing has been done to it and tests can be found in the tests directory.
@@ -114,26 +114,26 @@ The PIL classes ImageEnhance, ImageFile, ImageFileIO, ImageMath, ImageOps, Image
     
 If you want to use the methods getsize and getmask from ImageFont you have to use them differently:
 
-	from __future__ import print_function
-	import PILasOPENCV as Image
-	import PILasOPENCV as ImageDraw
-	import PILasOPENCV as ImageFont
-	import cv2
-	# from PIL import Image, ImageDraw, ImageFont
+    from __future__ import print_function
+    import PILasOPENCV as Image
+    import PILasOPENCV as ImageDraw
+    import PILasOPENCV as ImageFont
+    import cv2
+    # from PIL import Image, ImageDraw, ImageFont
     
-	font = ImageFont.truetype("ARIAL.ttf".lower(), 18)
-	im = Image.open("lena.jpg")
-	draw = ImageDraw.Draw(im)
-	text = "Lena's image"
-	draw.text((249,455), text, font=font, fill=(0, 0, 0))
-	# in PIL:
-	# print(font.getsize(text))
-	# mask = font.getmask(text)
-	print(ImageFont.getsize(text, font))
-	mask = ImageFont.getmask(text, font)
-	print(type(mask))
-	cv2.imshow("mask", mask)
-	im.show()
+    font = ImageFont.truetype("ARIAL.ttf".lower(), 18)
+    im = Image.open("lena.jpg")
+    draw = ImageDraw.Draw(im)
+    text = "Lena's image"
+    draw.text((249,455), text, font=font, fill=(0, 0, 0))
+    # in PIL:
+    # print(font.getsize(text))
+    # mask = font.getmask(text)
+    print(ImageFont.getsize(text, font))
+    mask = ImageFont.getmask(text, font)
+    print(type(mask))
+    cv2.imshow("mask", mask)
+    im.show()
 
 If you want to fork this project, feel free to do so. Give me a message in case you are forking and improving the code.
 abunkahle@t-online.de
@@ -145,6 +145,8 @@ Install it with
      pip install numpy opencv-python freetype-py mss gif2numpy numpy2gif
 
 # Version history:
+
+2.7: Bugfix when drawing text and lines or other draw objects the lines were not drawn, fixed
 
 2.6: Bugfix for method show: Old windows were not deleted so it came to display errors, fixed
 
