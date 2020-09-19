@@ -39,10 +39,11 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.8"
+VERSION = "2.9"
 
 """
 Version history:
+2.9: New functions of ImageEnhance Brightness and Contrast implemented
 2.8: In case an image file does not exist which shall be opened there will be an exception raised
 2.7: Bugfix when drawing text and lines or other draw objects the lines were not drawn, fixed
 2.6: Bugfix for method show: Old windows were not deleted so it came to display errors, fixed
@@ -2913,6 +2914,29 @@ def logical_xor(image1, image2):
     # (image1 xor image2).
     image1_copy, image2_copy = _reduce_images(image1, image2)
     return np.logical_xor(image1_copy, image2_copy)
+
+class Brightness(object):
+
+    def __init__(self, image):
+        self.image = image
+
+    def enhance(self, factor):
+        # Brightness control (0-100) which is 0.0 to 1.0 in original PIL
+        img = self.image.getim()
+        brightness = (1-factor)*-255
+        adjusted = cv2.addWeighted(img, 1.0, np.zeros(img.shape, img.dtype), 0, brightness)
+        return Image(adjusted)
+
+class Contrast(object):
+
+    def __init__(self, image):
+        self.image = image
+
+    def enhance(self, factor):
+        img = self.image.getim()
+        # Contrast control factor which is 0.0 to 1.0 in original PIL
+        adjusted = cv2.convertScaleAbs(img, alpha=factor, beta=0)
+        return Image(adjusted)
 
 class Filter(object):
     pass
