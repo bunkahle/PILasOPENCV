@@ -39,10 +39,11 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.7"
+VERSION = "2.8"
 
 """
 Version history:
+2.8: In case an image file does not exist which shall be opened there will be an exception raised
 2.7: Bugfix when drawing text and lines or other draw objects the lines were not drawn, fixed
 2.6: Bugfix for method show: Old windows were not deleted so it came to display errors, fixed
 2.5: Bugfixes for coordinates which were given as float instead of integers when drawing polygons, texts, lines, points, rectangles 
@@ -2589,6 +2590,8 @@ def open(fl, mode='r'):
     _mode = None
     _format = None
     if isinstance(fl, basstring):
+        if not os.path.isfile(fl):
+            raise IOError("cannot find image file", fl)
         if os.path.splitext(fl)[1].lower() == ".gif":
             if gif2numpy_installed:
                 _instances, _exts, _image_specs = gif2numpy.convert(fl)
