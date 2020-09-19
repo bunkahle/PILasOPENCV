@@ -146,6 +146,10 @@ Install it with
 
 # Version history:
 
+2.9: New functions of ImageEnhance Brightness and Contrast implemented
+
+2.8: In case an image file does not exist which shall be opened there will be an exception raised
+
 2.7: Bugfix when drawing text and lines or other draw objects the lines were not drawn, fixed
 
 2.6: Bugfix for method show: Old windows were not deleted so it came to display errors, fixed
