@@ -146,6 +146,8 @@ Install it with
 
 # Version history:
 
+3.0: Floodfill got an check if the seed point is outside the image, ImageDraw got new methods getim() and setim()
+
 2.9: New functions of ImageEnhance Brightness and Contrast implemented
 
 2.8: In case an image file does not exist which shall be opened there will be an exception raised
