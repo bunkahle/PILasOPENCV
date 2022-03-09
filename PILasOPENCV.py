@@ -39,10 +39,11 @@ except:
     freetype_installed = False
 
 __author__ = 'imressed, bunkus'
-VERSION = "2.9"
+VERSION = "3.0"
 
 """
 Version history:
+3.0: Floodfill got an check if the seed point is outside the image, ImageDraw got new methods getim() and setim()
 2.9: New functions of ImageEnhance Brightness and Contrast implemented
 2.8: In case an image file does not exist which shall be opened there will be an exception raised
 2.7: Bugfix when drawing text and lines or other draw objects the lines were not drawn, fixed
@@ -1915,6 +1916,13 @@ class ImageDraw(object):
             self.font = cv2.FONT_HERSHEY_SIMPLEX
         return self.font
 
+    def getim(self):
+        return self._img_instance
+
+    def setim(self, image):
+        self._img_instance = image.copy()        
+
+
     def line(self, xy, fill=None, width=1, joint=None):
         "Draw a line."
         ink = self._getink(fill)[0]
@@ -2095,7 +2103,7 @@ class ImageDraw(object):
         if channels == 1 and depth == np.float64:
             self.ink = 0.0
 
-    def text(self, xy, text, fill=None, font=cv2.FONT_HERSHEY_SIMPLEX, anchor=None, scale=0.4, thickness=1, calledfrommultilines=False, *args, **kwargs):
+    def text(self, xy, text, fill=None, font=cv2.FONT_HERSHEY_SIMPLEX, anchor=None, scale=0.4, thickness=1, calledfrommultilines=False, background=(255, 255 , 255), *args, **kwargs):
         fontFace = font
         fontScale = scale
         if not calledfrommultilines and not isinstance(fontFace, freetype.Face):
@@ -2204,7 +2212,8 @@ def floodfill(image, xy, value, border=None, thresh=0, flags=130820):
     mask[:] = 0
     lo = hi = thresh
     xy = tuple([int(i) for i in xy])
-    cv2.floodFill(_img_instance, mask, xy, value, (lo,)*3, (hi,)*3, flags)
+    if 0<=xy[0]<_img_instance.shape[1] and 0<=xy[1]<_img_instance.shape[0]:
+        cv2.floodFill(_img_instance, mask, xy, value, (lo,)*3, (hi,)*3, flags)
 
 class ImageColor(object):
 
