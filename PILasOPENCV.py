@@ -533,7 +533,7 @@ class Image(object):
     def _get_channels_and_depth(self, mode):
         mode = str(mode).upper()
         if mode == '1':
-            return 1 , np.bool
+            return 1 , bool
         if mode == 'L':
             return 1, np.uint8
         if mode == 'LA':
@@ -607,7 +607,7 @@ class Image(object):
             channels = 1
         else:
             channels = shape[2]
-        if channels == 1 and depth == np.bool:
+        if channels == 1 and depth == bool:
             return '1'
         if channels == 1 and depth == np.uint8:
             return 'L'
@@ -2086,7 +2086,7 @@ class ImageDraw(object):
         else:
             channels = self._img_instance.shape[2]
         depth = self._img_instance.dtype
-        if channels == 1 and depth == np.bool:
+        if channels == 1 and depth == bool:
             self.ink = False
         if channels == 1 and depth == np.uint8:
             self.ink = 0
